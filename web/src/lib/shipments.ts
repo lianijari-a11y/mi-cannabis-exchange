@@ -1,0 +1,129 @@
+import "server-only";
+import { prisma } from "@/lib/prisma";
+import { saveDocumentFile } from "@/lib/media";
+import { NEXT_SHIPMENT_STATUS, type ShipmentStatus } from "@/lib/constants";
+
+// Approved transporters, preferred one first — used to populate the
+// retailer's transporter picker when they accept an invoice.
+export async function transportersForSelection() {
+  return prisma.user.findMany({
+    where: { role: "transporter", licenseVerification: "approved" },
+    orderBy: [{ preferredTransporter: "desc" }, { businessName: "asc" }],
+  });
+}
+
+// Grower/processor uploads an invoice against their own accepted deal.
+export async function uploadInvoice(dealId: string, sellerId: string, file: File) {
+  const deal = await prisma.deal.findUnique({ where: { id: dealId } });
+  if (!deal || deal.sellerId !== sellerId) {
+    throw new Error("Not authorized for this deal.");
+  }
+
+  const url = await saveDocumentFile(`deal-${dealId}`, file);
+  await prisma.deal.update({
+    where: { id: dealId },
+    data: { invoiceUrl: url, invoiceUploadedAt: new Date() },
+  });
+}
+
+// Retailer accepts the invoice and picks a transporter — this is what
+// actually kicks off fulfillment (see CLAUDE.md §3 transporter update).
+export async function acceptInvoiceAndAssignTransporter(
+  dealId: string,
+  retailerId: string,
+  transporterId: string
+) {
+  const deal = await prisma.deal.findUnique({ where: { id: dealId } });
+  if (!deal || deal.retailerId !== retailerId) {
+    throw new Error("Not authorized for this deal.");
+  }
+  if (!deal.invoiceUrl) {
+    throw new Error("No invoice has been uploaded yet.");
+  }
+
+  const transporter = await prisma.user.findUnique({ where: { id: transporterId } });
+  if (!transporter || transporter.role !== "transporter" || transporter.licenseVerification !== "approved") {
+    throw new Error("Choose a valid, approved transporter.");
+  }
+
+  await prisma.$transaction([
+    prisma.deal.update({ where: { id: dealId }, data: { invoiceAcceptedAt: new Date() } }),
+    prisma.shipment.create({
+      data: {
+        dealId,
+        transporterId,
+        events: { create: { status: "assigned" } },
+      },
+    }),
+  ]);
+}
+
+// ---------- Transporter-facing (full, real identity — see CLAUDE.md §3) ----------
+
+export async function shipmentsForTransporter(transporterId: string) {
+  return prisma.shipment.findMany({
+    where: { transporterId },
+    include: {
+      events: { orderBy: { createdAt: "asc" } },
+      deal: {
+        include: {
+          seller: true,
+          retailer: true,
+          thread: { include: { listing: true } },
+        },
+      },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+}
+
+export async function shipmentForTransporter(shipmentId: string, transporterId: string) {
+  const shipment = await prisma.shipment.findUnique({
+    where: { id: shipmentId },
+    include: {
+      events: { orderBy: { createdAt: "asc" } },
+      deal: {
+        include: {
+          seller: true,
+          retailer: true,
+          thread: { include: { listing: true } },
+        },
+      },
+    },
+  });
+  if (!shipment || shipment.transporterId !== transporterId) return null;
+  return shipment;
+}
+
+// One step at a time, no skipping ahead — see NEXT_SHIPMENT_STATUS.
+export async function advanceShipmentStatus(
+  shipmentId: string,
+  transporterId: string,
+  note: string | null,
+  podFile: File | null
+) {
+  const shipment = await prisma.shipment.findUnique({ where: { id: shipmentId } });
+  if (!shipment || shipment.transporterId !== transporterId) {
+    throw new Error("Not authorized for this shipment.");
+  }
+
+  const next = NEXT_SHIPMENT_STATUS[shipment.status as ShipmentStatus];
+  if (!next) {
+    throw new Error("This shipment is already delivered.");
+  }
+
+  let podUrl: string | undefined;
+  if (next === "delivered" && podFile && podFile.size > 0) {
+    podUrl = await saveDocumentFile(`shipment-${shipmentId}`, podFile);
+  }
+
+  await prisma.$transaction([
+    prisma.shipment.update({
+      where: { id: shipmentId },
+      data: { status: next, ...(podUrl ? { podUrl } : {}) },
+    }),
+    prisma.shipmentEvent.create({
+      data: { shipmentId, status: next, note: note || null },
+    }),
+  ]);
+}

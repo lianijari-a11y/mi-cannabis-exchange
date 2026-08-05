@@ -1,0 +1,226 @@
+// MI Cannabis Exchange — Prisma schema
+// SQLite for zero-setup local dev (see CLAUDE.md §7) — swap `provider`/`url`
+// to Postgres before production. SQLite has no native enum/array types, so
+// role/category/status fields are plain Strings; valid values are enforced
+// in application code (see src/lib/constants.ts) rather than at the DB layer.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ---------- Core identity ----------
+// role: "grower" | "processor" | "retailer" | "broker" | "transporter" | "admin"
+model User {
+  id           String   @id @default(cuid())
+  role         String
+  email        String   @unique
+  passwordHash String
+  fullName     String
+  businessName String?
+
+  // Pickup/delivery address — grower/processor/retailer fill this in at
+  // signup so a Shipment has somewhere to route to. Not collected for
+  // broker/transporter/admin.
+  address String?
+  city    String?
+  state   String?
+  zip     String?
+
+  // License fields — grower/processor/retailer/transporter only (MI's Secure
+  // Transporter license, same licensing tier as the others). Verified by
+  // Admin, never auto-verified (no MI equivalent of FMCSA SAFER exists yet,
+  // see CLAUDE.md §8).
+  licenseNumber       String?
+  licenseType         String?
+  licenseVerification String  @default("unverified") // unverified | approved | rejected
+
+  // Platform owner's default transporter, pre-selected (but overridable) when
+  // a retailer picks who ships their deal. Admin-only toggle. Only meaningful
+  // for role = transporter.
+  preferredTransporter Boolean @default(false)
+
+  // Stable anonymous handle shown to the counterparty across the blind
+  // marketplace boundary, e.g. "Grower #A17". Generated once at signup,
+  // never derived from the real name so it can't leak identity. Transporters
+  // get one too for consistency, but their real business name is always
+  // shown — transport identity isn't part of the grower/retailer blind
+  // boundary, see CLAUDE.md §3/§10.
+  anonHandle String @unique
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  listings           Listing[]       @relation("ListingPostedBy")
+  offerRoundsMade    OfferRound[]    @relation("OfferRoundActor")
+  retailerThreads    OfferThread[]   @relation("ThreadRetailer")
+  dealsAsSeller      Deal[]          @relation("DealSeller")
+  dealsAsRetailer    Deal[]          @relation("DealRetailer")
+  shipmentsHauled    Shipment[]      @relation("ShipmentTransporter")
+
+  @@map("users")
+}
+
+// ---------- Listings ----------
+// category: "flower" | "concentrate" | "vape" | "edible" | "pre_roll" | "other"
+// unit: "lb" | "liter" | "unit"
+// terms: "cash" | "net_30" | "negotiable"
+// status: "active" | "expired" | "closed" (closed = a Deal was made)
+model Listing {
+  id          String   @id @default(cuid())
+  postedById  String
+  postedBy    User     @relation("ListingPostedBy", fields: [postedById], references: [id])
+
+  strainName  String
+  category    String
+  thcPercent  Float?
+  quantity    Float
+  unit        String
+  pricePerUnit Float
+  terms       String
+  notes       String?
+
+  status    String   @default("active")
+  expiresAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  media   ListingMedia[]
+  threads OfferThread[]
+
+  @@index([status])
+  @@map("listings")
+}
+
+// type: "image" | "video"
+model ListingMedia {
+  id        String   @id @default(cuid())
+  listingId String
+  listing   Listing  @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  type      String
+  url       String
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@map("listing_media")
+}
+
+// ---------- Negotiation ----------
+// One thread per (listing, retailer) pair. status: "open" | "accepted" | "rejected" | "expired"
+model OfferThread {
+  id          String   @id @default(cuid())
+  listingId   String
+  listing     Listing  @relation(fields: [listingId], references: [id])
+  retailerId  String
+  retailer    User     @relation("ThreadRetailer", fields: [retailerId], references: [id])
+
+  status    String   @default("open")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  rounds OfferRound[]
+  deal   Deal?
+
+  @@unique([listingId, retailerId])
+  @@index([status])
+  @@map("offer_threads")
+}
+
+// action: "counter" | "accept" | "reject"
+// actorRole is denormalized ("retailer" | "seller") so anonymization logic
+// never has to resolve actorId's real role for display to the other party.
+model OfferRound {
+  id        String   @id @default(cuid())
+  threadId  String
+  thread    OfferThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  actorId   String
+  actor     User     @relation("OfferRoundActor", fields: [actorId], references: [id])
+  actorRole String
+
+  action    String
+  price     Float?
+  quantity  Float?
+  terms     String?
+  message   String?
+
+  createdAt DateTime @default(now())
+
+  @@map("offer_rounds")
+}
+
+// Created when a thread's status becomes "accepted". Holds both real
+// identities — but per CLAUDE.md §3/§6, only broker-, admin-, and (once a
+// Shipment exists) assigned-transporter-scoped queries are allowed to
+// resolve sellerId/retailerId through to their real User records. The
+// seller's and retailer's own deal views (src/lib/shipments.ts) query this
+// same table but only ever render the *other* party through their
+// anonHandle, never these relations directly.
+model Deal {
+  id         String   @id @default(cuid())
+  threadId   String   @unique
+  thread     OfferThread @relation(fields: [threadId], references: [id])
+  listingId  String
+
+  sellerId    String
+  seller      User   @relation("DealSeller", fields: [sellerId], references: [id])
+  retailerId  String
+  retailer    User   @relation("DealRetailer", fields: [retailerId], references: [id])
+
+  finalPrice    Float
+  finalQuantity Float
+  finalTerms    String
+
+  // Fulfillment: grower/processor uploads an invoice, retailer reviews and
+  // accepts it, which is what triggers transporter selection (see Shipment
+  // below). Nothing here is legally a completed transfer — see CLAUDE.md §2.
+  invoiceUrl        String?
+  invoiceUploadedAt DateTime?
+  invoiceAcceptedAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  shipment Shipment?
+
+  @@map("deals")
+}
+
+// One shipment per accepted+invoiced Deal. Created the moment the retailer
+// accepts the invoice and picks a transporter (see CLAUDE.md §3 update on
+// transporters). status: "assigned" | "picked_up" | "in_transit" | "delivered".
+model Shipment {
+  id            String @id @default(cuid())
+  dealId        String @unique
+  deal          Deal   @relation(fields: [dealId], references: [id])
+  transporterId String
+  transporter   User   @relation("ShipmentTransporter", fields: [transporterId], references: [id])
+
+  status  String  @default("assigned")
+  podUrl  String? // proof-of-delivery photo/signature, uploaded by the transporter on delivery
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  events ShipmentEvent[]
+
+  @@map("shipments")
+}
+
+// Status timeline, logged by the transporter as they update the shipment —
+// this is the "tracking" the grower/retailer/broker see.
+model ShipmentEvent {
+  id         String   @id @default(cuid())
+  shipmentId String
+  shipment   Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+
+  status String
+  note   String?
+
+  createdAt DateTime @default(now())
+
+  @@map("shipment_events")
+}
