@@ -17,12 +17,21 @@ const DEAL_SHIPMENT_INCLUDE = {
   },
 };
 
-// Get-or-create the one thread for a (listing, retailer) pair.
+// Get-or-create the one thread for a (listing, retailer) pair. An existing
+// thread always continues (e.g. a listing that expires mid-negotiation
+// doesn't kill an in-flight conversation) — but a *new* thread can't start
+// on a listing that's no longer active, expired or not.
 export async function getOrCreateThread(listingId: string, retailerId: string) {
   const existing = await prisma.offerThread.findUnique({
     where: { listingId_retailerId: { listingId, retailerId } },
   });
   if (existing) return existing;
+
+  const listing = await prisma.listing.findUnique({ where: { id: listingId } });
+  if (!listing || listing.status !== "active") {
+    throw new Error("This listing is no longer active.");
+  }
+
   return prisma.offerThread.create({ data: { listingId, retailerId } });
 }
 

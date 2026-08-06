@@ -2,7 +2,14 @@
 
 import { useState, useTransition } from "react";
 import { Sparkles } from "lucide-react";
-import { CATEGORIES, CATEGORY_LABELS, TERMS, TERMS_LABELS, UNITS } from "@/lib/constants";
+import {
+  CATEGORIES,
+  CATEGORY_LABELS,
+  EXPIRATION_OPTIONS,
+  TERMS,
+  TERMS_LABELS,
+  UNITS,
+} from "@/lib/constants";
 import { structureListingDraft, type ListingDraft } from "@/lib/ai-listing";
 
 const inputClass =
@@ -221,6 +228,19 @@ export function ListingForm({
             onChange={(e) => set("notes", e.target.value)}
             className={inputClass}
           />
+        </div>
+
+        <div>
+          <label className={labelClass} htmlFor="expiresInHours">
+            Listing expires in
+          </label>
+          <select id="expiresInHours" name="expiresInHours" className={inputClass} defaultValue="168">
+            {EXPIRATION_OPTIONS.map((opt) => (
+              <option key={opt.label} value={opt.hours ?? ""}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
         </div>
 
         <div>

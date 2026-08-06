@@ -6,6 +6,7 @@ import { transportersForSelection } from "@/lib/shipments";
 import { CATEGORY_LABELS, TERMS_LABELS, type Category, type Terms } from "@/lib/constants";
 import { RespondForm } from "@/components/seller/respond-form";
 import { DealPanelRetailer } from "@/components/deal/deal-panel-retailer";
+import { timeRemaining } from "@/components/retailer/listing-card";
 
 export async function RetailerListingDetail({
   listingId,
@@ -73,6 +74,11 @@ export async function RetailerListingDetail({
             <span className="text-[10px] uppercase tracking-wide bg-green-700 text-white px-2 py-0.5 rounded-full">
               {TERMS_LABELS[listing.terms as Terms] ?? listing.terms}
             </span>
+            {listing.status === "active" && timeRemaining(listing.expiresAt) && (
+              <span className="text-xs text-amber-600 dark:text-amber-400">
+                {timeRemaining(listing.expiresAt)}
+              </span>
+            )}
           </div>
 
           <p className="mt-3 text-2xl font-semibold text-green-700 dark:text-green-400">
@@ -93,8 +99,13 @@ export async function RetailerListingDetail({
           Negotiation
         </h2>
 
-        {!thread && (
+        {!thread && listing.status === "active" && (
           <RespondForm action={respondAction} threadId="" listingId={listing.id} />
+        )}
+        {!thread && listing.status !== "active" && (
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            This listing {listing.status === "expired" ? "has expired" : "is no longer active"}.
+          </p>
         )}
 
         {thread && (

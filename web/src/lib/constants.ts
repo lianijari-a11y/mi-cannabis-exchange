@@ -43,6 +43,16 @@ export const TERMS_LABELS: Record<Terms, string> = {
   negotiable: "Negotiable",
 };
 
+// How long a listing stays visible in the retailer feed before it auto-expires.
+// hours: null means no expiration.
+export const EXPIRATION_OPTIONS: { hours: number | null; label: string }[] = [
+  { hours: 24, label: "24 hours" },
+  { hours: 24 * 3, label: "3 days" },
+  { hours: 24 * 7, label: "7 days" },
+  { hours: 24 * 14, label: "14 days" },
+  { hours: null, label: "No expiration" },
+];
+
 export const ROLE_LABELS: Record<Role, string> = {
   grower: "Grower",
   processor: "Processor",

@@ -11,9 +11,19 @@ export type FeedListing = {
   unit: string;
   pricePerUnit: number;
   terms: string;
+  expiresAt: Date | string | null;
   media: { id: string; type: string; url: string }[];
   postedBy: { anonHandle: string };
 };
+
+export function timeRemaining(expiresAt: Date | string | null): string | null {
+  if (!expiresAt) return null;
+  const ms = new Date(expiresAt).getTime() - Date.now();
+  if (ms <= 0) return null;
+  const hours = Math.ceil(ms / (60 * 60 * 1000));
+  if (hours < 24) return `${hours}h left`;
+  return `${Math.ceil(hours / 24)}d left`;
+}
 
 // The one place product presentation is defined, so every grower/processor/
 // broker listing shows up to retailers in the same clean, consistent card —
@@ -21,6 +31,7 @@ export type FeedListing = {
 // upload was.
 export function ListingCard({ listing }: { listing: FeedListing }) {
   const cover = listing.media[0];
+  const remaining = timeRemaining(listing.expiresAt);
 
   return (
     <Link
@@ -73,6 +84,9 @@ export function ListingCard({ listing }: { listing: FeedListing }) {
           <span>
             {listing.quantity} {listing.unit}
           </span>
+          {remaining && (
+            <span className="text-amber-600 dark:text-amber-400">{remaining}</span>
+          )}
         </div>
 
         <p className="mt-3 text-lg font-semibold text-green-700 dark:text-green-400">

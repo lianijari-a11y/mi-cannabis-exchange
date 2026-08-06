@@ -30,6 +30,8 @@ export async function handleCreateListing(role: SellerRole, formData: FormData) 
   const pricePerUnit = Number(formData.get("pricePerUnit"));
   const terms = String(formData.get("terms") ?? "");
   const notes = String(formData.get("notes") ?? "").trim();
+  const expiresInRaw = String(formData.get("expiresInHours") ?? "").trim();
+  const expiresInHours = expiresInRaw ? Number(expiresInRaw) : null;
 
   if (!strainName || !CATEGORIES.includes(category as (typeof CATEGORIES)[number])) {
     redirect(`/${role}/listings/new?error=${encodeURIComponent("Fill in the required fields.")}`);
@@ -58,6 +60,10 @@ export async function handleCreateListing(role: SellerRole, formData: FormData) 
       pricePerUnit,
       terms: terms as (typeof TERMS)[number],
       notes: notes || null,
+      expiresAt:
+        expiresInHours && Number.isFinite(expiresInHours)
+          ? new Date(Date.now() + expiresInHours * 60 * 60 * 1000)
+          : null,
     },
     files
   );

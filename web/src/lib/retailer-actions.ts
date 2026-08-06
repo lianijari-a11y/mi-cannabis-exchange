@@ -24,7 +24,16 @@ export async function handleRetailerRespond(formData: FormData) {
   const termsRaw = String(formData.get("terms") ?? "").trim();
   const message = String(formData.get("message") ?? "").trim();
 
-  const thread = await getOrCreateThread(listingId, session.user.id);
+  let thread;
+  try {
+    thread = await getOrCreateThread(listingId, session.user.id);
+  } catch {
+    redirect(
+      `/retailer/listings/${listingId}?error=${encodeURIComponent(
+        "This listing is no longer active."
+      )}`
+    );
+  }
 
   await addOfferRound({
     threadId: thread.id,

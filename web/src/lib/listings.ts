@@ -14,7 +14,20 @@ export type NewListingInput = {
   pricePerUnit: number;
   terms: Terms;
   notes: string | null;
+  expiresAt: Date | null;
 };
+
+// No background jobs in this app, so expiration is swept lazily: every read
+// path below flips any stale "active" listing to "expired" before querying.
+// The `status` column stays the single source of truth (matches the "active
+// | expired | closed" comment on the schema) rather than comparing expiresAt
+// ad hoc in every query.
+async function expireStaleListings() {
+  await prisma.listing.updateMany({
+    where: { status: "active", expiresAt: { not: null, lte: new Date() } },
+    data: { status: "expired" },
+  });
+}
 
 export async function createListing(
   postedById: string,
@@ -37,6 +50,7 @@ export async function createListing(
       pricePerUnit: input.pricePerUnit,
       terms: input.terms,
       notes: input.notes,
+      expiresAt: input.expiresAt,
     },
   });
 
@@ -54,6 +68,7 @@ export async function createListing(
 // A seller's own listing management view — no counterparty identity involved,
 // so no anonymization concern here.
 export async function listingsForSeller(sellerId: string) {
+  await expireStaleListings();
   return prisma.listing.findMany({
     where: { postedById: sellerId },
     include: { media: true, threads: { include: { rounds: true } } },
@@ -65,6 +80,7 @@ export async function listingsForSeller(sellerId: string) {
 // real User row is never selected, only their generated anonHandle. Do not
 // add `postedBy: true` (full relation) to this query — see CLAUDE.md §6.
 export async function activeListingsFeed() {
+  await expireStaleListings();
   return prisma.listing.findMany({
     where: { status: "active" },
     select: {
@@ -88,6 +104,7 @@ export async function activeListingsFeed() {
 }
 
 export async function getListingForSeller(listingId: string, sellerId: string) {
+  await expireStaleListings();
   const listing = await prisma.listing.findUnique({
     where: { id: listingId },
     include: { media: true },
@@ -101,6 +118,7 @@ export async function getListingForSeller(listingId: string, sellerId: string) {
 // thread on it (e.g. their deal was accepted and the listing closed — they
 // still need to reach their own deal/fulfillment page).
 export async function getListingAnonymized(listingId: string, retailerId: string) {
+  await expireStaleListings();
   return prisma.listing.findFirst({
     where: {
       id: listingId,
@@ -116,6 +134,8 @@ export async function getListingAnonymized(listingId: string, retailerId: string
       pricePerUnit: true,
       terms: true,
       notes: true,
+      status: true,
+      expiresAt: true,
       media: true,
       postedBy: { select: { anonHandle: true } },
     },

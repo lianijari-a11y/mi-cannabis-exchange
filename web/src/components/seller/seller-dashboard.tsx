@@ -52,6 +52,8 @@ export async function SellerDashboard({
                   className={`text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full ${
                     listing.status === "active"
                       ? "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400"
+                      : listing.status === "expired"
+                      ? "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400"
                       : "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400"
                   }`}
                 >
