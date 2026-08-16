@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { listingsForSeller } from "@/lib/listings";
 import { MarketPulse } from "@/components/market-pulse";
+import { StateMarketWidget } from "@/components/state-market-widget";
 import { CATEGORY_LABELS, TERMS_LABELS, type Category, type Terms } from "@/lib/constants";
 
 export async function SellerDashboard({
@@ -24,6 +25,7 @@ export async function SellerDashboard({
         </Link>
       </div>
 
+      <StateMarketWidget />
       <MarketPulse />
 
       {listings.length === 0 && (
@@ -35,6 +37,10 @@ export async function SellerDashboard({
       <div className="grid sm:grid-cols-2 gap-3">
         {listings.map((listing) => {
           const openThreads = listing.threads.filter((t) => t.status === "open").length;
+          const staleDays = Math.floor(
+            (Date.now() - new Date(listing.lastConfirmedAt).getTime()) / (24 * 60 * 60 * 1000)
+          );
+          const isStale = listing.status === "active" && staleDays >= 3;
           return (
             <Link
               key={listing.id}
@@ -70,6 +76,11 @@ export async function SellerDashboard({
               {openThreads > 0 && (
                 <p className="mt-1 text-xs text-green-700 dark:text-green-400 font-medium">
                   {openThreads} open negotiation{openThreads > 1 ? "s" : ""}
+                </p>
+              )}
+              {isStale && (
+                <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+                  Not confirmed available in {staleDays}d — open it to confirm
                 </p>
               )}
             </Link>

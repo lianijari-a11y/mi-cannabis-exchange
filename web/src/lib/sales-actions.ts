@@ -1,0 +1,125 @@
+import "server-only";
+import { redirect } from "next/navigation";
+import { requireRole } from "@/lib/dal";
+import { prisma } from "@/lib/prisma";
+import { createListing } from "@/lib/listings";
+import { CATEGORIES, TERMS, SALES_REP_ASSISTABLE_ROLES } from "@/lib/constants";
+
+// Search Growers/Processors by business name or email — used by both the
+// Sales Rep portal and Admin's "post on behalf of a seller" page (added
+// 2026-08-16, see CLAUDE.md §13). Real identity is the whole point here
+// (someone has to pick the actual account to post for), so this is only
+// ever called from sales_rep/admin-gated pages, never anywhere near the
+// retailer-facing anonymization boundary.
+export async function searchAssistableSellers(query: string) {
+  const q = query.trim();
+  if (!q) return [];
+  return prisma.user.findMany({
+    where: {
+      role: { in: [...SALES_REP_ASSISTABLE_ROLES] },
+      OR: [
+        { businessName: { contains: q, mode: "insensitive" } },
+        { email: { contains: q, mode: "insensitive" } },
+      ],
+    },
+    select: { id: true, businessName: true, fullName: true, email: true, role: true, licenseVerification: true },
+    take: 10,
+    orderBy: { businessName: "asc" },
+  });
+}
+
+// Shared by /sales/listings/new and /admin/listings/new — a Sales Rep or
+// Admin builds a listing and posts it under the chosen seller's own
+// identity (Listing.postedById), with createdBySalesRepId/createdByAdminId
+// left as an audit trail via createdBySalesRepId on Listing. Mirrors
+// handleCreateListing in lib/seller-actions.ts closely on purpose.
+export async function handleCreateListingAsAssistant(
+  actorRole: "sales_rep" | "admin",
+  redirectBasePath: string,
+  formData: FormData
+) {
+  const session = await requireRole(actorRole);
+
+  const sellerId = String(formData.get("sellerId") ?? "");
+  const seller = await prisma.user.findUnique({ where: { id: sellerId } });
+  if (!seller || !SALES_REP_ASSISTABLE_ROLES.includes(seller.role as (typeof SALES_REP_ASSISTABLE_ROLES)[number])) {
+    redirect(`${redirectBasePath}/listings/new?error=${encodeURIComponent("Choose a valid grower or processor to post for.")}`);
+  }
+
+  const strainName = String(formData.get("strainName") ?? "").trim();
+  const category = String(formData.get("category") ?? "");
+  const thcRaw = String(formData.get("thcPercent") ?? "").trim();
+  const quantity = Number(formData.get("quantity"));
+  const unit = String(formData.get("unit") ?? "");
+  const pricePerUnit = Number(formData.get("pricePerUnit"));
+  const terms = String(formData.get("terms") ?? "");
+  const notes = String(formData.get("notes") ?? "").trim();
+  const expiresInRaw = String(formData.get("expiresInHours") ?? "").trim();
+  const expiresInHours = expiresInRaw ? Number(expiresInRaw) : null;
+
+  if (!strainName || !CATEGORIES.includes(category as (typeof CATEGORIES)[number])) {
+    redirect(`${redirectBasePath}/listings/new?error=${encodeURIComponent("Fill in the required fields.")}`);
+  }
+  if (!Number.isFinite(quantity) || quantity <= 0) {
+    redirect(`${redirectBasePath}/listings/new?error=${encodeURIComponent("Quantity must be a positive number.")}`);
+  }
+  if (!Number.isFinite(pricePerUnit) || pricePerUnit <= 0) {
+    redirect(`${redirectBasePath}/listings/new?error=${encodeURIComponent("Price must be a positive number.")}`);
+  }
+  if (!TERMS.includes(terms as (typeof TERMS)[number])) {
+    redirect(`${redirectBasePath}/listings/new?error=${encodeURIComponent("Choose valid terms.")}`);
+  }
+
+  const files = formData.getAll("media").filter((f): f is File => f instanceof File);
+
+  await createListing(
+    seller.id,
+    seller.role,
+    {
+      strainName,
+      category: category as (typeof CATEGORIES)[number],
+      thcPercent: thcRaw ? Number(thcRaw) : null,
+      quantity,
+      unit: unit as never,
+      pricePerUnit,
+      terms: terms as (typeof TERMS)[number],
+      notes: notes || null,
+      expiresAt:
+        expiresInHours && Number.isFinite(expiresInHours)
+          ? new Date(Date.now() + expiresInHours * 60 * 60 * 1000)
+          : null,
+    },
+    files,
+    session.user.id
+  );
+
+  redirect(redirectBasePath);
+}
+
+// Listings a Sales Rep (or Admin, via the same page) has personally built —
+// their own "recent activity" view. Real seller identity shown, same trust
+// tier as Broker (CLAUDE.md §13).
+export async function listingsCreatedByAssistant(assistantId: string) {
+  return prisma.listing.findMany({
+    where: { createdBySalesRepId: assistantId },
+    include: { postedBy: { select: { businessName: true, fullName: true, role: true } } },
+    orderBy: { createdAt: "desc" },
+    take: 30,
+  });
+}
+
+// Deals closed from a Sales Rep's own listings, with their commission
+// status — see CLAUDE.md §18. A "sale" here means the underlying OfferThread
+// reached "accepted" (a Deal exists); the commission amount is only filled
+// in once the retailer accepts the delivered product (lib/commission.ts's
+// acceptProduct), same trigger as Broker commission.
+export async function salesForRep(salesRepId: string) {
+  return prisma.deal.findMany({
+    where: { thread: { listing: { createdBySalesRepId: salesRepId } } },
+    include: {
+      thread: { include: { listing: { select: { strainName: true, category: true } } } },
+      salesRepCommission: true,
+    },
+    orderBy: { createdAt: "desc" },
+  });
+}

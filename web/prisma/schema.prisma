@@ -42,11 +42,24 @@ model User {
   licenseType         String?
   licenseVerification String  @default("unverified") // unverified | approved | rejected
   licenseExpiry       DateTime? // shown in Admin's license expiration alerts
+  phone               String?
+
+  // True when licenseVerification was set to "approved" automatically by
+  // matching licenseNumber against LicenseRegistry at signup, rather than by
+  // an Admin manually reviewing it. Admin UI shows this distinctly so a real
+  // person can still audit/revoke a match — see CLAUDE.md §12.
+  licenseAutoMatched Boolean @default(false)
 
   // Platform owner's default transporter, pre-selected (but overridable) when
   // a retailer picks who ships their deal. Admin-only toggle. Only meaningful
   // for role = transporter.
   preferredTransporter Boolean @default(false)
+
+  // Admin-set standing commission rate for a Sales Rep, applied automatically
+  // to every deal closed from a listing they created — see
+  // SalesRepCommission below and CLAUDE.md §18. Only meaningful for
+  // role = sales_rep. Null/0 means no commission is computed.
+  salesRepCommissionRate Float?
 
   // Stable anonymous handle shown to the counterparty across the blind
   // marketplace boundary, e.g. "Grower #A17". Generated once at signup,
@@ -60,18 +73,48 @@ model User {
   updatedAt DateTime @updatedAt
 
   listings           Listing[]       @relation("ListingPostedBy")
+  listingsCreatedAsSalesRep Listing[] @relation("ListingCreatedBySalesRep")
   offerRoundsMade    OfferRound[]    @relation("OfferRoundActor")
   retailerThreads    OfferThread[]   @relation("ThreadRetailer")
   dealsAsSeller      Deal[]          @relation("DealSeller")
   dealsAsRetailer    Deal[]          @relation("DealRetailer")
   shipmentsHauled    Shipment[]      @relation("ShipmentTransporter")
   watchlistEntries   Watchlist[]
+  listingDismissals  ListingDismissal[]
   splitContractsAsGrower    SplitContract[] @relation("SplitContractGrower")
   splitContractsAsProcessor SplitContract[] @relation("SplitContractProcessor")
   notifications      Notification[]
   commissionsSet      Commission[]
+  monthlyReportsUploaded MonthlyMarketReport[]
+  posConnection          PosConnection?
+  agreementAcceptances   AgreementAcceptance[]
+  productRequests            ProductRequest[]         @relation("ProductRequestRetailer")
+  productRequestResponsesSent ProductRequestResponse[] @relation("ProductRequestResponseSupplier")
+  salesRepCommissionsEarned  SalesRepCommission[]
+  metrcConnection            MetrcConnection?
 
   @@map("users")
+}
+
+// Records that a user clicked "I agree" on a given agreement, at a given
+// version, at a given time — currently used for the platform-wide
+// non-circumvention agreement (see CLAUDE.md §18). One row per
+// (user, agreementType): accepting again after a version bump overwrites
+// the prior row rather than keeping history, since all that ever matters
+// for gating access is "did they accept the *current* version." The
+// underlying legal text is a placeholder pending review by an actual MI
+// cannabis attorney (same posture as CLAUDE.md §9's legal-template-content
+// caveat) — this model only tracks the click, it isn't itself the contract.
+model AgreementAcceptance {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  agreementType String // "non_circumvent"
+  version       String
+  acceptedAt    DateTime @default(now())
+
+  @@unique([userId, agreementType])
+  @@map("agreement_acceptances")
 }
 
 // In-app only — no SMS/push, see CLAUDE.md §8. type is a free-form tag
@@ -101,6 +144,14 @@ model Listing {
   postedById  String
   postedBy    User     @relation("ListingPostedBy", fields: [postedById], references: [id])
 
+  // Set when a Sales Rep built this listing on behalf of postedById (see
+  // lib/sales-actions.ts) instead of the seller posting it themselves —
+  // postedById is still the real Grower/Processor, so anonymization and
+  // ownership work exactly the same either way; this is purely an audit
+  // trail of who actually did the data entry. Never shown to buyers.
+  createdBySalesRepId String?
+  createdBySalesRep   User?   @relation("ListingCreatedBySalesRep", fields: [createdBySalesRepId], references: [id])
+
   strainName  String
   category    String
   thcPercent  Float?
@@ -113,13 +164,32 @@ model Listing {
   status    String   @default("active")
   expiresAt DateTime?
 
+  // Distribution control — added 2026-08-16, a deliberate, confirmed
+  // reversal of the original "every listing visible to every retailer,
+  // nothing platform-gated" rule (CLAUDE.md decision #3). Same posture as
+  // §11's commission reversal: not a silent decision, flagged and
+  // explicitly confirmed. "all" (default) preserves the original bulletin-
+  // board behavior; "exclusive" restricts visibility to exclusiveRetailerIds,
+  // set by Admin. See CLAUDE.md §18.
+  visibility           String   @default("all") // "all" | "exclusive"
+  exclusiveRetailerIds String[] @default([])
+
+  // Bumped by the seller's one-click "still available" confirmation
+  // (lib/listings.ts's confirmListingFresh) or by any edit to the listing.
+  // Feed sort offers a "recently confirmed" option and the seller dashboard
+  // flags anything stale — see CLAUDE.md §13. Never used to gate or hide a
+  // listing from the feed, only to inform.
+  lastConfirmedAt DateTime @default(now())
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   media   ListingMedia[]
   threads OfferThread[]
   watchlistedBy  Watchlist[]
+  dismissedBy    ListingDismissal[]
   splitContracts SplitContract[]
+  productRequestResponses ProductRequestResponse[]
 
   @@index([status])
   @@map("listings")
@@ -136,6 +206,76 @@ model Watchlist {
 
   @@unique([retailerId, listingId])
   @@map("watchlist_entries")
+}
+
+// A retailer marking a listing "Not interested" — same shape as Watchlist,
+// opposite intent: hides it from that retailer's own feed only (never
+// affects what anyone else sees, and never affects the listing itself).
+// Reversible from the retailer's dismissed-listings view.
+model ListingDismissal {
+  id         String   @id @default(cuid())
+  retailerId String
+  retailer   User     @relation(fields: [retailerId], references: [id], onDelete: Cascade)
+  listingId  String
+  listing    Listing  @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+
+  @@unique([retailerId, listingId])
+  @@map("listing_dismissals")
+}
+
+// "Wanted board" — a retailer posts a product they need that isn't
+// currently listed; visible to Growers/Processors/Brokers the same way a
+// Listing is visible to Retailers, just mirrored. Same blind-marketplace
+// boundary as everywhere else: the retailer is shown only via anonHandle to
+// suppliers, and a supplier is shown only via anonHandle back to the
+// retailer, unless the viewer is Broker/Admin (see CLAUDE.md §18).
+model ProductRequest {
+  id         String   @id @default(cuid())
+  retailerId String
+  retailer   User     @relation("ProductRequestRetailer", fields: [retailerId], references: [id], onDelete: Cascade)
+
+  category      String? // null = any category
+  productName   String // free-text description of what's needed, e.g. "Trim, any strain"
+  quantity      Float
+  unit          String
+  targetPrice   Float? // optional — retailer's target price/unit, null if open to offers
+  termsPreference String? // cash | net_30 | negotiable | null
+  note          String?
+
+  status    String   @default("open") // open | closed
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  responses ProductRequestResponse[]
+
+  @@map("product_requests")
+}
+
+// A supplier's reply to a wanted-board request — optionally points at one
+// of their own active Listings so the retailer can click through into the
+// normal negotiation flow (getOrCreateThread/addOfferRound) rather than
+// this app inventing a second deal-making state machine. No further
+// back-and-forth here; that continues in the normal offer thread once the
+// retailer engages with the linked listing (deliberately simple, same v1
+// scope cut as SplitContract's single propose step below).
+model ProductRequestResponse {
+  id        String   @id @default(cuid())
+  requestId String
+  request   ProductRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  supplierId String
+  supplier   User    @relation("ProductRequestResponseSupplier", fields: [supplierId], references: [id], onDelete: Cascade)
+
+  listingId String? // optional link to an existing matching listing
+  listing   Listing? @relation(fields: [listingId], references: [id], onDelete: SetNull)
+
+  price     Float?
+  quantity  Float?
+  message   String
+
+  createdAt DateTime @default(now())
+
+  @@map("product_request_responses")
 }
 
 // Toll-processing agreement: a Processor sources raw material from a
@@ -195,6 +335,14 @@ model ListingMedia {
   sortOrder Int      @default(0)
   createdAt DateTime @default(now())
 
+  // Experimental best-effort logo/contact-info removal — see
+  // lib/media-redaction.ts and CLAUDE.md §18. NOT a guarantee: a missed
+  // detection means the original content is still fully visible. Shown to
+  // the seller as a "reviewed, double-check it" signal, not a promise.
+  redactionAttempted     Boolean @default(false)
+  redactionRegionsFound  Int     @default(0)
+  redactionError         String?
+
   @@map("listing_media")
 }
 
@@ -210,6 +358,13 @@ model OfferThread {
   status    String   @default("open")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  // Added 2026-08-16 — optional per-negotiation expiration, independent of
+  // the listing's own expiresAt. Null means no expiration (the retailer's
+  // choice at the time they open the thread — see CLAUDE.md §18). Swept the
+  // same lazy way as listing expiration (lib/offers.ts's expireStaleThreads,
+  // called from every read path) rather than a background job.
+  expiresAt DateTime?
 
   // View tracking, per side — powers the "X viewed your offer N times"
   // alert. Counts increment on every view (a reload counts as a view, same
@@ -245,6 +400,15 @@ model OfferRound {
   terms     String?
   message   String?
 
+  // Added 2026-08-16 — who pays if the buyer later rejects the delivered
+  // product, and at what rate. Negotiated exactly like price/quantity/terms
+  // (most recent round's value wins at accept) — this is the buyer/seller's
+  // own negotiated term, set during their own negotiation, NOT the broker's
+  // call the way §11's commission is. If neither side ever proposes a rate,
+  // no fee applies (see Deal.rejectionFeeRate's default). See CLAUDE.md §14.
+  rejectionFeeRate  Float? // 0-100 (%), of deal value
+  rejectionFeePayer String? // "grower" | "retailer" | "split"
+
   createdAt DateTime @default(now())
 
   @@map("offer_rounds")
@@ -272,6 +436,12 @@ model Deal {
   finalQuantity Float
   finalTerms    String
 
+  // Resolved the same way as finalPrice — whatever was last on the table
+  // when the deal was accepted. 0/"split" if the parties never discussed
+  // it. See the OfferRound comment above and CLAUDE.md §14.
+  rejectionFeeRate  Float  @default(0)
+  rejectionFeePayer String @default("split")
+
   // Fulfillment: an invoice is auto-generated the moment the deal is
   // created (see lib/invoice.ts) so the retailer is never blocked waiting
   // on the grower; the grower can still upload their own file to override
@@ -297,8 +467,82 @@ model Deal {
 
   shipment   Shipment?
   commission Commission?
+  rejection  ProductRejection?
+  salesRepCommission SalesRepCommission?
 
   @@map("deals")
+}
+
+// Tracks a Sales Rep's attributed sales and the commission earned on them —
+// added 2026-08-16, see CLAUDE.md §18. Unlike Commission (broker-set,
+// per-deal, any rate the broker chooses), a sales rep's rate is a standing
+// structure Admin sets on their account (User.salesRepCommissionRate) and
+// applies automatically to every deal that closes from a listing they
+// created (Listing.createdBySalesRepId) — the rep doesn't negotiate it
+// per-deal. Created lazily at product acceptance (see lib/commission.ts's
+// acceptProduct), snapshotting the rep's rate at that moment so a later
+// rate change doesn't retroactively alter an already-computed commission
+// (same "computed once" posture as Commission).
+model SalesRepCommission {
+  id         String   @id @default(cuid())
+  dealId     String   @unique
+  deal       Deal     @relation(fields: [dealId], references: [id])
+  salesRepId String
+  salesRep   User     @relation(fields: [salesRepId], references: [id])
+
+  rate   Float // % snapshot at time of computation
+  amount Float // dealValue * rate/100, computed once
+
+  status String    @default("pending") // pending | paid
+  paidAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@map("sales_rep_commissions")
+}
+
+// Added 2026-08-16 — a deliberate, confirmed extension of the "rejecting is
+// only recorded, no in-app dispute process" stance from the Deal.productStatus
+// comment above. The human asked for an actual post-rejection workflow, not
+// just a recorded flag: the retailer states a reason and picks one of two
+// paths — request the product be returned outright, or propose a revised
+// price based on the delivered product's condition. The grower then either
+// accepts the revised price (closes the deal at the new finalPrice) or
+// insists on the return. Still a single round, no back-and-forth counter
+// loop — same "deliberately simpler" scope cut as SplitContract. This is
+// still NOT a refund/payment/return-shipping engine — the app tracks the
+// resolution, it doesn't move money or arrange the physical return; that
+// stays real-world/off-platform, same caveat as everywhere else (§2, §8).
+// resolutionType: "return" | "counter_offer" (set when the retailer acts)
+// status: "pending" | "counter_accepted" | "return_requested" | "return_approved"
+model ProductRejection {
+  id     String @id @default(cuid())
+  dealId String @unique
+  deal   Deal   @relation(fields: [dealId], references: [id])
+
+  reason String
+
+  resolutionType String?
+  counterPrice   Float?
+  counterNote    String?
+
+  status String @default("pending")
+
+  // Computed at rejection time from Deal.rejectionFeeRate/rejectionFeePayer
+  // — the rate/payer split was locked in during the original negotiation
+  // (CLAUDE.md §14), not decided now. feeAmount is null when the deal's
+  // rate is 0 (no fee was ever negotiated). Tracked, not processed — same
+  // "this app never moves money" posture as Commission (§8/§11).
+  feeAmount      Float?
+  feeGrowerOwes  Float?
+  feeRetailerOwes Float?
+  feeStatus      String  @default("pending") // pending | paid | waived
+  feePaidAt      DateTime?
+
+  createdAt  DateTime  @default(now())
+  resolvedAt DateTime?
+
+  @@map("product_rejections")
 }
 
 // Broker-set commission on a Deal — see CLAUDE.md §10's explicit note that
@@ -348,6 +592,31 @@ model Shipment {
   status  String  @default("assigned")
   podUrl  String? // proof-of-delivery photo/signature, uploaded by the transporter on delivery
 
+  // Added 2026-08-16 — the transporter proposes a pickup/delivery window,
+  // and both the grower and retailer have to explicitly accept it before the
+  // transporter can move the shipment past "assigned" into "picked_up" (see
+  // NEXT_SHIPMENT_STATUS in lib/constants.ts / advanceShipmentStatus in
+  // lib/shipments.ts). Re-proposing a new time (transporter changes either
+  // date) resets both acceptance flags — an old "yes" shouldn't silently
+  // apply to a new time nobody actually agreed to.
+  scheduledPickupAt        DateTime?
+  scheduledDeliveryAt      DateTime?
+  growerAcceptedSchedule   Boolean   @default(false)
+  retailerAcceptedSchedule Boolean   @default(false)
+
+  // Added 2026-08-16 — the transporter's own fee for hauling this shipment,
+  // separate from both the deal's price (grower/retailer) and the broker's
+  // commission (§11). The transporter sets the amount and who pays it
+  // (grower/retailer/split) once, then uploads or the app generates a
+  // simple invoice — tracked, not processed, same "this app never moves
+  // money" posture as everything else (§8/§11/§14). See CLAUDE.md §18.
+  transportFeeAmount         Float?
+  transportFeePayer          String? // "grower" | "retailer" | "split"
+  transportFeeSplitGrowerPct Float?
+  transportInvoiceUrl        String?
+  transportFeeStatus         String  @default("pending") // pending | paid
+  transportFeePaidAt         DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -369,4 +638,163 @@ model ShipmentEvent {
   createdAt DateTime @default(now())
 
   @@map("shipment_events")
+}
+
+// ---------- POS integration scaffolding (added 2026-08-16) ----------
+// Requested: push accepted deals into a seller's existing POS (Dutchie,
+// Treez, Flowhub, or Cova). All four require becoming a certified/approved
+// API partner with that vendor — a business relationship, not just an API
+// key a user pastes in — which hasn't happened yet, so there is NO live
+// vendor API call anywhere in this codebase. What's built is the
+// architecture: a connection record, a common adapter interface
+// (lib/pos-integration.ts), and a sync log — every "sync" today produces a
+// PosSyncLog row honestly marked stubOnly, not a faked success. See
+// CLAUDE.md §18 — don't wire a real vendor call in without real, verified
+// partner credentials and current API docs for that vendor.
+model PosConnection {
+  id      String @id @default(cuid())
+  userId  String @unique
+  user    User   @relation(fields: [userId], references: [id])
+  vendor  String // "dutchie" | "treez" | "flowhub" | "cova"
+  apiKey  String // NOT encrypted at rest yet — see CLAUDE.md §8-style deferred note in §18
+  autoSyncEnabled Boolean @default(false)
+  connectedAt     DateTime @default(now())
+
+  syncLogs PosSyncLog[]
+
+  @@map("pos_connections")
+}
+
+model PosSyncLog {
+  id             String        @id @default(cuid())
+  connectionId   String
+  connection     PosConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  dealId         String?
+  vendor         String
+  status         String // "stub_only" | "failed" — never "synced" until a real adapter exists
+  message        String
+  createdAt      DateTime      @default(now())
+
+  @@map("pos_sync_logs")
+}
+
+// ---------- METRC connection scaffolding (added 2026-08-16, second ask) ----------
+// SCAFFOLDING ONLY — see lib/metrc-integration.ts. No live METRC API call is
+// made anywhere in this codebase yet. CLAUDE.md §2 flags that it isn't
+// established whether "Broker" (this platform's core role, full visibility
+// into every deal) is a recognized MI license category for wholesale
+// transfers — connecting real METRC credentials starts operationally
+// treating this platform as part of the compliance chain, which is exactly
+// that unresolved question. These models exist so the connection UI is
+// ready the moment real API access + legal review land, same "recommend,
+// don't act autonomously" posture as everywhere else AI/automation touches
+// this app. Do not wire live manifest/transfer calls without both.
+model MetrcConnection {
+  id            String   @id @default(cuid())
+  userId        String   @unique
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  licenseNumber String?
+  userApiKey    String // NOT encrypted at rest yet — same deferred-hardening note as PosConnection.apiKey
+  connectedAt   DateTime @default(now())
+
+  @@map("metrc_connections")
+}
+
+// Singleton — the platform's own METRC "software vendor" API key (issued by
+// METRC to a registered software integrator, used alongside each licensee's
+// own MetrcConnection.userApiKey). Admin-only.
+model MetrcVendorConfig {
+  id           String   @id @default("singleton")
+  vendorApiKey String?
+  updatedAt    DateTime @updatedAt
+
+  @@map("metrc_vendor_config")
+}
+
+// ---------- Statewide monthly market report (added 2026-08-16) ----------
+// Michigan's Cannabis Regulation Agency (CRA) publishes an official monthly
+// report (Medical + Adult-Use programs) with statewide sales-by-category,
+// sales-by-region, active license counts, and average retail flower price.
+// The human uploads that .docx every month (Admin-only, see
+// lib/monthly-report.ts) and it's parsed into this table so every portal
+// can show real statewide market context alongside this platform's own
+// internal Market Pulse (lib/market.ts, which only reflects this
+// platform's own listings/deals — a much smaller sample). This is public
+// state regulatory data, not anything about this platform's own users.
+model MonthlyMarketReport {
+  id             String   @id @default(cuid())
+  reportMonth    DateTime @unique // normalized to the 1st of the month
+  reportLabel    String // "July 2026"
+  sourceFileName String?
+  uploadedById   String
+  uploadedBy     User     @relation(fields: [uploadedById], references: [id])
+  uploadedAt     DateTime @default(now())
+
+  // Headline Adult-Use (recreational) figures — the program this platform's
+  // wholesale market actually operates under. Denormalized onto the row for
+  // fast trend queries without unpacking the JSON blobs below every time.
+  auTotalSales                Float?
+  auTotalPoundsSold            Float?
+  auAvgRetailFlowerPricePerOz Float?
+  auSalesToDate                Float?
+  auActiveLicensesTotal        Int?
+
+  // Same headline figures for the Medical program, for context.
+  medTotalSales                Float?
+  medTotalPoundsSold           Float?
+  medAvgRetailFlowerPricePerOz Float?
+
+  // Full structured breakdown — category × {poundsSold, flOzSold,
+  // totalSales} for both programs, plus the 5-region breakdown and active
+  // license counts by license type. Kept as JSON rather than one column per
+  // cell: the report has ~10 product categories × 5 regions × 2 programs,
+  // and Claude doesn't control this document's shape — modeling every cell
+  // as a dedicated migration would be unmaintainable churn.
+  auCategoryBreakdown   Json?
+  medCategoryBreakdown  Json?
+  auRegionalBreakdown   Json?
+  medRegionalBreakdown  Json?
+  activeLicensesByType  Json?
+
+  // Fallback dump of whatever text the parser pulled from the .docx, so a
+  // human can eyeball what didn't map cleanly to a field above.
+  rawExtractedText String?
+
+  @@map("monthly_market_reports")
+}
+
+// ---------- License registry (added 2026-08-16) ----------
+// Imported from the state of Michigan's CRA licensee exports (5 category
+// files: Class B/C Grower, Processor, Retailer, Secure Transporter — no
+// "Broker" category exists in the state data, consistent with CLAUDE.md §2's
+// still-open question). Looked up by license number at signup to
+// auto-populate business name/address and, on an "active" match, skip the
+// manual Admin queue — see lib/license-registry.ts for the matching and
+// auto-approval logic, and CLAUDE.md §12 for the honesty tradeoff this
+// implies (a license *number* match isn't proof of who's typing it in).
+model LicenseRegistry {
+  id             String    @id @default(cuid())
+  licenseNumber  String    @unique
+  category       String // grower_b | grower_c | processor | retailer | transporter
+  recordType     String? // state's own label, e.g. "Class C Marihuana Grower - License"
+  businessName   String
+  street         String?
+  city           String?
+  state          String?
+  zip            String?
+  status         String // state's raw status string, e.g. "Active", "License Void"
+  expirationDate DateTime?
+  hasDisciplinaryAction Boolean @default(false)
+
+  // Phone/contact enrichment merged in from the platform owner's own lead
+  // list, matched by normalized business name (the two datasets use
+  // different license-number schemes, so name is the only reliable join key
+  // — see the merge note in scripts/import-license-registry.mjs). Null when
+  // no match was found; state data alone still covers name/address/status.
+  phone String?
+
+  importedAt DateTime @default(now())
+
+  @@index([businessName])
+  @@map("license_registry")
 }

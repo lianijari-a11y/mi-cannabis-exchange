@@ -21,8 +21,10 @@ export default function SignupPage() {
               Create your account
             </h1>
             <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
-              Growers, processors, and retailers need a valid state license number. It's
-              reviewed by an admin before your listings or offers go live.
+              Growers, processors, retailers, and transporters need a valid state license
+              number. If it matches an active record in Michigan&apos;s license registry
+              you&apos;re good to go immediately — otherwise an admin reviews it, but you can
+              still post listings and make offers in the meantime.
             </p>
           </div>
 

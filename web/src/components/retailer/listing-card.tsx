@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Leaf, Droplet } from "lucide-react";
 import { CATEGORY_LABELS, TERMS_LABELS, type Category, type Terms } from "@/lib/constants";
 import { WatchlistButton } from "@/components/retailer/watchlist-button";
+import { DismissButton } from "@/components/retailer/dismiss-button";
 
 export type FeedListing = {
   id: string;
@@ -13,9 +14,12 @@ export type FeedListing = {
   pricePerUnit: number;
   terms: string;
   expiresAt: Date | string | null;
+  lastConfirmedAt?: Date | string | null;
   media: { id: string; type: string; url: string }[];
   postedBy: { anonHandle: string };
 };
+
+const STALE_AFTER_DAYS = 3;
 
 export function timeRemaining(expiresAt: Date | string | null): string | null {
   if (!expiresAt) return null;
@@ -39,6 +43,10 @@ export function ListingCard({
 }) {
   const cover = listing.media[0];
   const remaining = timeRemaining(listing.expiresAt);
+  const staleDays = listing.lastConfirmedAt
+    ? Math.floor((Date.now() - new Date(listing.lastConfirmedAt).getTime()) / (24 * 60 * 60 * 1000))
+    : null;
+  const isStale = staleDays !== null && staleDays >= STALE_AFTER_DAYS;
 
   return (
     <Link
@@ -69,7 +77,8 @@ export function ListingCard({
         <span className="absolute top-2 right-2 text-[10px] font-medium uppercase tracking-wide bg-green-700/90 text-white px-2 py-1 rounded-full backdrop-blur-sm">
           {TERMS_LABELS[listing.terms as Terms] ?? listing.terms}
         </span>
-        <div className="absolute bottom-2 right-2">
+        <div className="absolute bottom-2 right-2 flex gap-1.5">
+          <DismissButton listingId={listing.id} />
           <WatchlistButton listingId={listing.id} initialWatching={watching} />
         </div>
       </div>
@@ -96,6 +105,14 @@ export function ListingCard({
           </span>
           {remaining && (
             <span className="text-amber-600 dark:text-amber-400">{remaining}</span>
+          )}
+          {isStale && (
+            <span
+              className="text-gray-400 dark:text-gray-500"
+              title="The seller hasn't confirmed this is still available recently"
+            >
+              Not confirmed in {staleDays}d
+            </span>
           )}
         </div>
 

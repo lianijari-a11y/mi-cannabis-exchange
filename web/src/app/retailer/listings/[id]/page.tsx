@@ -1,12 +1,22 @@
 import { requireRole } from "@/lib/dal";
 import { PortalShell } from "@/components/portal-shell";
 import { RetailerListingDetail } from "@/components/retailer/retailer-listing-detail";
-import { respond, acceptInvoice, acceptProduct, rejectProduct } from "./actions";
+import {
+  respond,
+  acceptInvoice,
+  acceptProduct,
+  rejectProduct,
+  chooseReturn,
+  proposeRejectionCounter,
+  acceptShipmentSchedule,
+} from "./actions";
 
 const NAV = [
   { href: "/retailer", label: "Browse inventory" },
   { href: "/retailer/negotiations", label: "My negotiations" },
   { href: "/retailer/watchlist", label: "Watchlist" },
+  { href: "/retailer/requests", label: "Wanted board" },
+  { href: "/retailer/settings", label: "Settings" },
 ];
 
 export default async function RetailerListingDetailPage({
@@ -29,6 +39,9 @@ export default async function RetailerListingDetailPage({
         acceptInvoiceAction={acceptInvoice}
         acceptProductAction={acceptProduct}
         rejectProductAction={rejectProduct}
+        chooseReturnAction={chooseReturn}
+        proposeRejectionCounterAction={proposeRejectionCounter}
+        acceptScheduleAction={acceptShipmentSchedule}
         error={error}
       />
     </PortalShell>

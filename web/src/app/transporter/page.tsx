@@ -2,7 +2,10 @@ import { requireRole } from "@/lib/dal";
 import { PortalShell } from "@/components/portal-shell";
 import { TransporterDashboard } from "@/components/transporter/transporter-dashboard";
 
-const NAV = [{ href: "/transporter", label: "My shipments" }];
+const NAV = [
+  { href: "/transporter", label: "My shipments" },
+  { href: "/transporter/settings", label: "Settings" },
+];
 
 export default async function TransporterPage() {
   const session = await requireRole("transporter");

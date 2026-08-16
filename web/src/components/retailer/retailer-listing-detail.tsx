@@ -19,6 +19,9 @@ export async function RetailerListingDetail({
   acceptInvoiceAction,
   acceptProductAction,
   rejectProductAction,
+  chooseReturnAction,
+  proposeRejectionCounterAction,
+  acceptScheduleAction,
   error,
 }: {
   listingId: string;
@@ -27,6 +30,9 @@ export async function RetailerListingDetail({
   acceptInvoiceAction: (formData: FormData) => void;
   acceptProductAction: (formData: FormData) => void;
   rejectProductAction: (formData: FormData) => void;
+  chooseReturnAction?: (formData: FormData) => void;
+  proposeRejectionCounterAction?: (formData: FormData) => void;
+  acceptScheduleAction?: (formData: FormData) => void;
   error?: string;
 }) {
   const listing = await getListingAnonymized(listingId, retailerId);
@@ -170,6 +176,9 @@ export async function RetailerListingDetail({
                 acceptInvoiceAction={acceptInvoiceAction}
                 acceptProductAction={acceptProductAction}
                 rejectProductAction={rejectProductAction}
+                chooseReturnAction={chooseReturnAction}
+                proposeRejectionCounterAction={proposeRejectionCounterAction}
+                acceptScheduleAction={acceptScheduleAction}
               />
             )}
           </>

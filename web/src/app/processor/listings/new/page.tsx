@@ -8,6 +8,8 @@ const NAV = [
   { href: "/processor/sourcing", label: "Sourcing" },
   { href: "/processor/contracts", label: "My contracts" },
   { href: "/processor/listings/new", label: "Post inventory" },
+  { href: "/processor/requests", label: "Buyer requests" },
+  { href: "/processor/settings", label: "Settings" },
 ];
 
 export default async function NewProcessorListingPage({

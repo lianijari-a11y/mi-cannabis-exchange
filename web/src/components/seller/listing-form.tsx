@@ -35,9 +35,15 @@ const EMPTY_DRAFT: ListingDraft = {
 export function ListingForm({
   action,
   error,
+  sellerPickerSlot,
 }: {
   action: (formData: FormData) => void;
   error?: string;
+  // Rendered as the first field inside the <form> — used by /sales and
+  // /admin's "post on behalf of a seller" pages to inject a seller search
+  // field ahead of the usual listing fields, without forking this whole
+  // component. See CLAUDE.md §13.
+  sellerPickerSlot?: React.ReactNode;
 }) {
   const [rawNotes, setRawNotes] = useState("");
   const [draft, setDraft] = useState<ListingDraft>(EMPTY_DRAFT);
@@ -91,6 +97,7 @@ export function ListingForm({
       </div>
 
       <form action={action} className="space-y-4">
+        {sellerPickerSlot}
         <div>
           <label className={labelClass} htmlFor="strainName">
             Strain / product name

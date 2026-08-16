@@ -5,6 +5,9 @@ import {
   handleAcceptInvoice,
   handleAcceptProduct,
   handleRejectProduct,
+  handleChooseReturn,
+  handleProposeRejectionCounter,
+  handleAcceptShipmentSchedule,
 } from "@/lib/retailer-actions";
 
 export async function respond(formData: FormData) {
@@ -21,4 +24,16 @@ export async function acceptProduct(formData: FormData) {
 
 export async function rejectProduct(formData: FormData) {
   await handleRejectProduct(formData);
+}
+
+export async function chooseReturn(formData: FormData) {
+  await handleChooseReturn(formData);
+}
+
+export async function proposeRejectionCounter(formData: FormData) {
+  await handleProposeRejectionCounter(formData);
+}
+
+export async function acceptShipmentSchedule(formData: FormData) {
+  await handleAcceptShipmentSchedule(formData);
 }

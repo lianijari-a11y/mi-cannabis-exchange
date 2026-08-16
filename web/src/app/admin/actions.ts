@@ -2,7 +2,12 @@
 
 import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/dal";
-import { setLicenseVerification, setPreferredTransporter } from "@/lib/admin";
+import {
+  setLicenseVerification,
+  setPreferredTransporter,
+  setSalesRepCommissionRate,
+  markSalesRepCommissionPaid,
+} from "@/lib/admin";
 
 export async function reviewLicense(formData: FormData) {
   await requireRole("admin");
@@ -19,4 +24,19 @@ export async function togglePreferredTransporter(formData: FormData) {
   const preferred = String(formData.get("preferred") ?? "") === "true";
   await setPreferredTransporter(userId, preferred);
   revalidatePath("/admin");
+}
+
+export async function setSalesRepRate(formData: FormData) {
+  await requireRole("admin");
+  const userId = String(formData.get("userId") ?? "");
+  const rate = Number(formData.get("rate"));
+  await setSalesRepCommissionRate(userId, rate);
+  revalidatePath("/admin");
+  revalidatePath("/admin/sales-reps");
+}
+
+export async function markSalesRepPaid(formData: FormData) {
+  await requireRole("admin");
+  await markSalesRepCommissionPaid(String(formData.get("commissionId")));
+  revalidatePath("/admin/sales-reps");
 }

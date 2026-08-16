@@ -6,6 +6,8 @@ import { createListing } from "./actions";
 const NAV = [
   { href: "/broker", label: "All negotiations" },
   { href: "/broker/listings/new", label: "Post inventory" },
+  { href: "/broker/requests", label: "Buyer requests" },
+  { href: "/broker/settings", label: "Settings" },
 ];
 
 export default async function NewBrokerListingPage({

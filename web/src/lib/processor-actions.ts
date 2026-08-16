@@ -13,10 +13,12 @@ export async function handleProposeSplitContract(formData: FormData) {
   const session = await requireRole("processor");
 
   const user = await prisma.user.findUnique({ where: { id: session.user.id } });
-  if (user?.licenseVerification !== "approved") {
+  // Pending review ("unverified") can still propose split contracts — only a
+  // rejected license blocks it. See CLAUDE.md §12.
+  if (user?.licenseVerification === "rejected") {
     redirect(
       `/processor/sourcing?error=${encodeURIComponent(
-        "Your license must be approved by an admin before you can propose a split contract."
+        "Your license was rejected by an admin. Contact support to resolve this before proposing contracts."
       )}`
     );
   }

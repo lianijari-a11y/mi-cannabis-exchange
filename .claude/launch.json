@@ -4,8 +4,8 @@
     {
       "name": "mi-cannabis-exchange",
       "runtimeExecutable": "bash",
-      "runtimeArgs": ["dev.sh"],
-      "port": 3000
+      "runtimeArgs": ["/Users/alex/Downloads/mi-cannabis-exchange/dev.sh"],
+      "port": 3100
     }
   ]
 }

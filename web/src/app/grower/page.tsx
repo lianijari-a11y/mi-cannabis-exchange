@@ -5,6 +5,8 @@ import { SellerDashboard } from "@/components/seller/seller-dashboard";
 const NAV = [
   { href: "/grower", label: "My listings" },
   { href: "/grower/listings/new", label: "Post inventory" },
+  { href: "/grower/requests", label: "Buyer requests" },
+  { href: "/grower/settings", label: "Settings" },
 ];
 
 export default async function GrowerPage() {

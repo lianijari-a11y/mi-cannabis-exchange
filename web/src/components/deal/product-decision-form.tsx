@@ -50,7 +50,8 @@ export function ProductDecisionForm({
         <input type="hidden" name="listingId" value={listingId} />
         <input
           name="reason"
-          placeholder="What's wrong with the shipment? (optional)"
+          required
+          placeholder="What's wrong with the shipment? (required)"
           className="w-full border border-gray-300 dark:border-gray-700 rounded-lg px-2 py-1.5 text-xs bg-transparent"
         />
         <div className="flex gap-2">

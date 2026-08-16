@@ -1,9 +1,25 @@
-export const ROLES = ["grower", "processor", "retailer", "broker", "transporter", "admin"] as const;
+export const ROLES = [
+  "grower",
+  "processor",
+  "retailer",
+  "broker",
+  "transporter",
+  "sales_rep",
+  "admin",
+] as const;
 export type Role = (typeof ROLES)[number];
 
-// Roles that can post inventory listings.
+// Roles that can post inventory listings. Sales Rep isn't here — they don't
+// post under their own identity, they build a listing on behalf of a
+// Grower/Processor they select (see lib/sales-actions.ts). Broker keeps its
+// existing ability to post directly under decision #1's original scope.
 export const SELLER_ROLES = ["grower", "processor", "broker"] as const;
 export type SellerRole = (typeof SELLER_ROLES)[number];
+
+// Sales Rep is platform/Broker-adjacent staff, same trust tier as Broker —
+// not a licensed cultivator themselves, so no LICENSED_ROLES/ADDRESS_ROLES
+// entry, same as Broker. See CLAUDE.md §13.
+export const SALES_REP_ASSISTABLE_ROLES = ["grower", "processor"] as const;
 
 // Roles that hold a state cannabis license and go through Admin verification.
 // Transporter maps to Michigan's Secure Transporter license category.
@@ -59,6 +75,7 @@ export const ROLE_LABELS: Record<Role, string> = {
   retailer: "Retailer",
   broker: "Broker",
   transporter: "Transporter",
+  sales_rep: "Sales Rep",
   admin: "Admin",
 };
 
@@ -93,6 +110,8 @@ export function roleHome(role: string): string {
       return "/broker";
     case "transporter":
       return "/transporter";
+    case "sales_rep":
+      return "/sales";
     case "admin":
       return "/admin";
     default:

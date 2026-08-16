@@ -3,6 +3,7 @@ import { PortalShell } from "@/components/portal-shell";
 import { activeListingsFeed } from "@/lib/listings";
 import { ListingCard } from "@/components/retailer/listing-card";
 import { MarketPulse } from "@/components/market-pulse";
+import { StateMarketWidget } from "@/components/state-market-widget";
 import { watchlistedIdsFor } from "@/lib/watchlist";
 import { CATEGORIES, CATEGORY_LABELS } from "@/lib/constants";
 
@@ -10,6 +11,8 @@ const NAV = [
   { href: "/retailer", label: "Browse inventory" },
   { href: "/retailer/negotiations", label: "My negotiations" },
   { href: "/retailer/watchlist", label: "Watchlist" },
+  { href: "/retailer/requests", label: "Wanted board" },
+  { href: "/retailer/settings", label: "Settings" },
 ];
 
 const SORTS = {
@@ -17,20 +20,30 @@ const SORTS = {
   price_asc: "Price: low to high",
   price_desc: "Price: high to low",
   thc_desc: "THC: high to low",
+  recently_confirmed: "Recently confirmed available",
 } as const;
 
 export default async function RetailerPage({
   searchParams,
 }: {
-  searchParams: Promise<{ category?: string; sort?: string }>;
+  searchParams: Promise<{ category?: string; sort?: string; q?: string }>;
 }) {
   const session = await requireRole("retailer");
-  const { category, sort } = await searchParams;
-  let listings = await activeListingsFeed();
+  const { category, sort, q } = await searchParams;
+  let listings = await activeListingsFeed(session.user.id);
   const watchlistIds = await watchlistedIdsFor(session.user.id);
 
   if (category && CATEGORIES.includes(category as (typeof CATEGORIES)[number])) {
     listings = listings.filter((l) => l.category === category);
+  }
+
+  const query = q?.trim().toLowerCase();
+  if (query) {
+    listings = listings.filter(
+      (l) =>
+        l.strainName.toLowerCase().includes(query) ||
+        CATEGORY_LABELS[l.category as keyof typeof CATEGORY_LABELS]?.toLowerCase().includes(query)
+    );
   }
 
   switch (sort) {
@@ -42,6 +55,11 @@ export default async function RetailerPage({
       break;
     case "thc_desc":
       listings = [...listings].sort((a, b) => (b.thcPercent ?? 0) - (a.thcPercent ?? 0));
+      break;
+    case "recently_confirmed":
+      listings = [...listings].sort(
+        (a, b) => new Date(b.lastConfirmedAt).getTime() - new Date(a.lastConfirmedAt).getTime()
+      );
       break;
     default:
       break;
@@ -60,7 +78,14 @@ export default async function RetailerPage({
           </p>
         </div>
 
-        <form className="flex gap-2 text-xs">
+        <form className="flex gap-2 text-xs flex-wrap">
+          <input
+            type="text"
+            name="q"
+            defaultValue={q ?? ""}
+            placeholder="Search strain or product name…"
+            className="border border-gray-300 dark:border-gray-700 rounded-lg px-2 py-1.5 bg-transparent w-48"
+          />
           <select
             name="category"
             defaultValue={category ?? ""}
@@ -93,11 +118,21 @@ export default async function RetailerPage({
         </form>
       </div>
 
+      <StateMarketWidget />
       <MarketPulse />
 
       {listings.length === 0 && (
         <p className="mt-6 text-sm text-gray-500 dark:text-gray-400">
-          No listings match right now — check back soon.
+          {query || category
+            ? "No listings match your search/filters — try broadening them."
+            : "No listings match right now — check back soon."}
+        </p>
+      )}
+
+      {listings.length > 0 && (query || category) && (
+        <p className="mt-4 text-xs text-gray-500 dark:text-gray-400">
+          {listings.length} listing{listings.length === 1 ? "" : "s"} match
+          {query ? ` "${q}"` : ""}
         </p>
       )}
 

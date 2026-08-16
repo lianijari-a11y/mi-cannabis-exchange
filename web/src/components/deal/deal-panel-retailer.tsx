@@ -1,11 +1,35 @@
+"use client";
+
+import { useState } from "react";
 import { ShipmentTimeline } from "@/components/deal/shipment-timeline";
 import { ProductDecisionForm } from "@/components/deal/product-decision-form";
+import { ScheduleAcceptPanel } from "@/components/deal/schedule-accept-panel";
 
 type DealShipment = {
+  id: string;
   status: string;
+  scheduledPickupAt: Date | null;
+  scheduledDeliveryAt: Date | null;
+  growerAcceptedSchedule: boolean;
+  retailerAcceptedSchedule: boolean;
+  transportFeeAmount: number | null;
+  transportFeePayer: string | null;
+  transportFeeSplitGrowerPct: number | null;
+  transportFeeStatus: string;
   transporter: { businessName: string | null; fullName: string };
   events: { id: string; status: string; note: string | null; createdAt: Date }[];
 };
+
+function transportFeeOwed(shipment: DealShipment, side: "grower" | "retailer"): number | null {
+  if (shipment.transportFeeAmount == null) return null;
+  if (shipment.transportFeePayer === side) return shipment.transportFeeAmount;
+  if (shipment.transportFeePayer === "split") {
+    const growerPct = shipment.transportFeeSplitGrowerPct ?? 50;
+    const pct = side === "grower" ? growerPct : 100 - growerPct;
+    return Math.round(shipment.transportFeeAmount * (pct / 100) * 100) / 100;
+  }
+  return 0;
+}
 
 type DealCommission = {
   rate: number;
@@ -15,6 +39,16 @@ type DealCommission = {
   status: string;
 };
 
+type DealRejection = {
+  reason: string;
+  resolutionType: string | null;
+  counterPrice: number | null;
+  counterNote: string | null;
+  status: string;
+  feeAmount: number | null;
+  feeRetailerOwes: number | null;
+} | null;
+
 type Deal = {
   id: string;
   invoiceUrl: string | null;
@@ -22,9 +56,77 @@ type Deal = {
   shipment: DealShipment | null;
   productStatus: string;
   commission: DealCommission | null;
+  rejection?: DealRejection;
 };
 
 type Transporter = { id: string; businessName: string | null; fullName: string; preferredTransporter: boolean };
+
+function RejectionResolutionChoice({
+  dealId,
+  listingId,
+  chooseReturnAction,
+  proposeRejectionCounterAction,
+}: {
+  dealId: string;
+  listingId: string;
+  chooseReturnAction: (formData: FormData) => void;
+  proposeRejectionCounterAction: (formData: FormData) => void;
+}) {
+  const [mode, setMode] = useState<"idle" | "counter">("idle");
+
+  if (mode === "counter") {
+    return (
+      <form action={proposeRejectionCounterAction} className="space-y-2">
+        <input type="hidden" name="dealId" value={dealId} />
+        <input type="hidden" name="listingId" value={listingId} />
+        <input
+          name="counterPrice"
+          type="number"
+          step="0.01"
+          min="0.01"
+          required
+          placeholder="Revised price per unit"
+          className="w-full border border-gray-300 dark:border-gray-700 rounded-lg px-2 py-1.5 text-xs bg-transparent"
+        />
+        <input
+          name="counterNote"
+          placeholder="Note about the condition (optional)"
+          className="w-full border border-gray-300 dark:border-gray-700 rounded-lg px-2 py-1.5 text-xs bg-transparent"
+        />
+        <div className="flex gap-2">
+          <button type="submit" className="bg-green-700 text-white rounded-lg px-3 py-1.5 text-xs font-medium">
+            Send revised price
+          </button>
+          <button type="button" onClick={() => setMode("idle")} className="text-xs text-gray-500 dark:text-gray-400">
+            Cancel
+          </button>
+        </div>
+      </form>
+    );
+  }
+
+  return (
+    <div className="flex gap-2">
+      <form action={chooseReturnAction}>
+        <input type="hidden" name="dealId" value={dealId} />
+        <input type="hidden" name="listingId" value={listingId} />
+        <button
+          type="submit"
+          className="border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 rounded-lg px-3 py-1.5 text-xs font-medium"
+        >
+          Send it back
+        </button>
+      </form>
+      <button
+        type="button"
+        onClick={() => setMode("counter")}
+        className="bg-amber-600 text-white rounded-lg px-3 py-1.5 text-xs font-medium"
+      >
+        Propose a different price
+      </button>
+    </div>
+  );
+}
 
 export function DealPanelRetailer({
   deal,
@@ -33,6 +135,9 @@ export function DealPanelRetailer({
   acceptInvoiceAction,
   acceptProductAction,
   rejectProductAction,
+  chooseReturnAction,
+  proposeRejectionCounterAction,
+  acceptScheduleAction,
 }: {
   deal: Deal;
   listingId: string;
@@ -40,6 +145,9 @@ export function DealPanelRetailer({
   acceptInvoiceAction: (formData: FormData) => void;
   acceptProductAction: (formData: FormData) => void;
   rejectProductAction: (formData: FormData) => void;
+  chooseReturnAction?: (formData: FormData) => void;
+  proposeRejectionCounterAction?: (formData: FormData) => void;
+  acceptScheduleAction?: (formData: FormData) => void;
 }) {
   const preferred = transporters.find((t) => t.preferredTransporter);
 
@@ -103,6 +211,26 @@ export function DealPanelRetailer({
         />
       )}
 
+      {deal.shipment && transportFeeOwed(deal.shipment, "retailer") != null && transportFeeOwed(deal.shipment, "retailer")! > 0 && (
+        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+          Transport fee: ${transportFeeOwed(deal.shipment, "retailer")} owed to the transporter (
+          {deal.shipment.transportFeeStatus === "paid" ? "paid" : "pending"})
+        </p>
+      )}
+
+      {deal.shipment && acceptScheduleAction && (
+        <ScheduleAcceptPanel
+          scheduledPickupAt={deal.shipment.scheduledPickupAt}
+          scheduledDeliveryAt={deal.shipment.scheduledDeliveryAt}
+          ownAccepted={deal.shipment.retailerAcceptedSchedule}
+          otherAccepted={deal.shipment.growerAcceptedSchedule}
+          otherLabel="The seller"
+          shipmentId={deal.shipment.id}
+          listingId={listingId}
+          acceptAction={acceptScheduleAction}
+        />
+      )}
+
       {deal.shipment?.status === "delivered" && deal.productStatus === "pending" && (
         <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-800">
           <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
@@ -131,12 +259,43 @@ export function DealPanelRetailer({
         </div>
       )}
 
-      {deal.productStatus === "rejected" && (
+      {deal.productStatus === "rejected" && deal.rejection && (
         <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-800">
-          <p className="text-xs text-red-600 dark:text-red-400 font-medium">
-            You rejected this delivery. This needs to be resolved directly with the seller — the
-            app doesn't run a refund/return process.
+          <p className="text-xs text-red-600 dark:text-red-400 font-medium mb-1">
+            You rejected this delivery: &ldquo;{deal.rejection.reason}&rdquo;
           </p>
+          {deal.rejection.feeAmount != null && (
+            <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
+              Rejection fee: ${deal.rejection.feeAmount} total
+              {deal.rejection.feeRetailerOwes != null ? ` — you owe $${deal.rejection.feeRetailerOwes}` : ""}
+            </p>
+          )}
+
+          {!deal.rejection.resolutionType && chooseReturnAction && proposeRejectionCounterAction && (
+            <RejectionResolutionChoice
+              dealId={deal.id}
+              listingId={listingId}
+              chooseReturnAction={chooseReturnAction}
+              proposeRejectionCounterAction={proposeRejectionCounterAction}
+            />
+          )}
+
+          {deal.rejection.resolutionType === "counter_offer" && deal.rejection.status === "pending" && (
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              Waiting on the seller to respond to your ${deal.rejection.counterPrice} proposal.
+            </p>
+          )}
+          {deal.rejection.status === "counter_accepted" && (
+            <p className="text-xs text-green-700 dark:text-green-400 font-medium">
+              The seller accepted your revised price — this deal is now final at the new terms.
+            </p>
+          )}
+          {deal.rejection.status === "return_requested" && (
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              The product is being returned — coordinate the physical return directly with the
+              seller. The app doesn&apos;t run a refund/return-shipping process.
+            </p>
+          )}
         </div>
       )}
     </div>

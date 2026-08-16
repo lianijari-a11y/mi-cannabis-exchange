@@ -1,7 +1,8 @@
 import { notFound } from "next/navigation";
-import { Eye, FlaskConical } from "lucide-react";
+import { Eye, FlaskConical, Star } from "lucide-react";
 import { getListingForSeller } from "@/lib/listings";
 import { threadsForListing, recordThreadView } from "@/lib/offers";
+import { retailerRatingForThread } from "@/lib/market";
 import { splitContractsForListing } from "@/lib/split-contracts";
 import { CATEGORY_LABELS, TERMS_LABELS, type Category, type Terms } from "@/lib/constants";
 import { RespondForm } from "@/components/seller/respond-form";
@@ -13,21 +14,36 @@ export async function SellerListingDetail({
   respondAction,
   invoiceAction,
   splitContractRespondAction,
+  confirmFreshAction,
+  acceptScheduleAction,
+  acceptRejectionCounterAction,
+  requireReturnAction,
 }: {
   listingId: string;
   sellerId: string;
   respondAction: (formData: FormData) => void;
   invoiceAction: (formData: FormData) => void;
   splitContractRespondAction: (formData: FormData) => void;
+  confirmFreshAction?: (formData: FormData) => void;
+  acceptScheduleAction?: (formData: FormData) => void;
+  acceptRejectionCounterAction?: (formData: FormData) => void;
+  requireReturnAction?: (formData: FormData) => void;
 }) {
   const listing = await getListingForSeller(listingId, sellerId);
   if (!listing) notFound();
+
+  const staleDays = Math.floor(
+    (Date.now() - new Date(listing.lastConfirmedAt).getTime()) / (24 * 60 * 60 * 1000)
+  );
 
   const threads = await threadsForListing(listingId, sellerId);
   // Seller is looking at every thread on this page right now — log a view
   // for each so the retailer side can be alerted ("the seller viewed your
   // offer").
   await Promise.all(threads.map((t) => recordThreadView(t.id, "seller")));
+  const retailerRatings = await Promise.all(
+    threads.map((t) => retailerRatingForThread(t.id))
+  );
 
   const splitContracts = await splitContractsForListing(listingId, sellerId);
 
@@ -46,16 +62,42 @@ export async function SellerListingDetail({
         {listing.notes && (
           <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">{listing.notes}</p>
         )}
+        {listing.status === "active" && confirmFreshAction && (
+          <div className="mt-3 flex items-center gap-2">
+            <p className="text-xs text-gray-400 dark:text-gray-500">
+              {staleDays === 0 ? "Confirmed available today" : `Last confirmed available ${staleDays}d ago`}
+            </p>
+            <form action={confirmFreshAction}>
+              <input type="hidden" name="listingId" value={listing.id} />
+              <button
+                type="submit"
+                className="text-[10px] uppercase tracking-wide border border-gray-300 dark:border-gray-700 text-gray-600 dark:text-gray-300 rounded-full px-2 py-0.5"
+              >
+                Still available? Confirm
+              </button>
+            </form>
+          </div>
+        )}
         {listing.media.length > 0 && (
           <div className="mt-3 flex gap-2 overflow-x-auto">
-            {listing.media.map((m) =>
-              m.type === "video" ? (
-                <video key={m.id} src={m.url} controls className="h-28 rounded-lg" />
-              ) : (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img key={m.id} src={m.url} alt="" className="h-28 rounded-lg object-cover" />
-              )
-            )}
+            {listing.media.map((m) => (
+              <div key={m.id} className="relative shrink-0">
+                {m.type === "video" ? (
+                  <video src={m.url} controls className="h-28 rounded-lg" />
+                ) : (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={m.url} alt="" className="h-28 rounded-lg object-cover" />
+                )}
+                {m.redactionAttempted && m.redactionRegionsFound > 0 && (
+                  <span
+                    title="Experimental auto-redaction blacked out something it thought was a logo or contact info — double-check this photo before relying on it."
+                    className="absolute bottom-1 left-1 text-[9px] bg-amber-600 text-white rounded px-1.5 py-0.5"
+                  >
+                    Auto-redacted — review
+                  </span>
+                )}
+              </div>
+            ))}
           </div>
         )}
       </div>
@@ -70,14 +112,23 @@ export async function SellerListingDetail({
           </p>
         )}
         <div className="space-y-3">
-          {threads.map((thread) => (
+          {threads.map((thread, i) => {
+            const rating = retailerRatings[i];
+            return (
             <div
               key={thread.id}
               className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-4"
             >
               <div className="flex items-center justify-between mb-2">
-                <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                <span className="text-sm font-medium text-gray-900 dark:text-gray-100 flex items-center gap-1.5">
                   {thread.retailer.anonHandle}
+                  {rating.score != null ? (
+                    <span className="inline-flex items-center gap-0.5 text-[10px] font-normal text-amber-600 dark:text-amber-400">
+                      <Star className="w-3 h-3 fill-current" /> {rating.score}
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-normal text-gray-400">new buyer</span>
+                  )}
                 </span>
                 <div className="flex items-center gap-2">
                   {thread.retailerViewCount > 0 && (
@@ -130,10 +181,14 @@ export async function SellerListingDetail({
                   deal={thread.deal}
                   listingId={listing.id}
                   invoiceAction={invoiceAction}
+                  acceptScheduleAction={acceptScheduleAction}
+                  acceptRejectionCounterAction={acceptRejectionCounterAction}
+                  requireReturnAction={requireReturnAction}
                 />
               )}
             </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 

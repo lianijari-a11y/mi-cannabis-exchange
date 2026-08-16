@@ -1,13 +1,23 @@
 import { requireRole } from "@/lib/dal";
 import { PortalShell } from "@/components/portal-shell";
 import { SellerListingDetail } from "@/components/seller/listing-detail";
-import { respond, uploadInvoice, splitContractRespond } from "./actions";
+import {
+  respond,
+  uploadInvoice,
+  splitContractRespond,
+  confirmListingFresh,
+  acceptShipmentSchedule,
+  acceptRejectionCounter,
+  requireReturnInsteadOfCounter,
+} from "./actions";
 
 const NAV = [
   { href: "/processor", label: "My listings" },
   { href: "/processor/sourcing", label: "Sourcing" },
   { href: "/processor/contracts", label: "My contracts" },
   { href: "/processor/listings/new", label: "Post inventory" },
+  { href: "/processor/requests", label: "Buyer requests" },
+  { href: "/processor/settings", label: "Settings" },
 ];
 
 export default async function ProcessorListingDetailPage({
@@ -26,6 +36,10 @@ export default async function ProcessorListingDetailPage({
         respondAction={respond}
         invoiceAction={uploadInvoice}
         splitContractRespondAction={splitContractRespond}
+        confirmFreshAction={confirmListingFresh}
+        acceptScheduleAction={acceptShipmentSchedule}
+        acceptRejectionCounterAction={acceptRejectionCounter}
+        requireReturnAction={requireReturnInsteadOfCounter}
       />
     </PortalShell>
   );

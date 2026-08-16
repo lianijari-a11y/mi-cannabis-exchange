@@ -95,6 +95,111 @@ export async function shipmentForTransporter(shipmentId: string, transporterId: 
   return shipment;
 }
 
+// Added 2026-08-16 — transporter proposes a pickup/delivery window. Setting
+// or changing either time resets both acceptance flags: an old "yes" from
+// the grower/retailer shouldn't silently carry over to a time nobody
+// actually agreed to. See advanceShipmentStatus's gating below and
+// CLAUDE.md §13.
+export async function proposeShipmentSchedule(
+  shipmentId: string,
+  transporterId: string,
+  scheduledPickupAt: Date | null,
+  scheduledDeliveryAt: Date | null
+) {
+  const shipment = await prisma.shipment.findUnique({ where: { id: shipmentId } });
+  if (!shipment || shipment.transporterId !== transporterId) {
+    throw new Error("Not authorized for this shipment.");
+  }
+  await prisma.shipment.update({
+    where: { id: shipmentId },
+    data: {
+      scheduledPickupAt,
+      scheduledDeliveryAt,
+      growerAcceptedSchedule: false,
+      retailerAcceptedSchedule: false,
+    },
+  });
+}
+
+// Grower or retailer accepts the transporter's proposed schedule. Both have
+// to accept before the transporter can move past "assigned" — see the gate
+// in advanceShipmentStatus below.
+export async function acceptShipmentSchedule(
+  shipmentId: string,
+  userId: string,
+  role: "grower" | "retailer"
+) {
+  const shipment = await prisma.shipment.findUnique({
+    where: { id: shipmentId },
+    include: { deal: true },
+  });
+  if (!shipment) throw new Error("Shipment not found.");
+  const expectedId = role === "grower" ? shipment.deal.sellerId : shipment.deal.retailerId;
+  if (userId !== expectedId) throw new Error("Not authorized for this shipment.");
+  if (!shipment.scheduledPickupAt) throw new Error("No schedule has been proposed yet.");
+
+  await prisma.shipment.update({
+    where: { id: shipmentId },
+    data:
+      role === "grower"
+        ? { growerAcceptedSchedule: true }
+        : { retailerAcceptedSchedule: true },
+  });
+}
+
+// Added 2026-08-16 — the transporter's own fee for hauling this load,
+// separate from the deal's price and the broker's commission (§11). The
+// transporter sets amount + who pays (grower/retailer/split) once; editing
+// it afterward just overwrites (unlike Commission, nothing downstream is
+// computed from this that would need to stay frozen). Tracked, not
+// processed — see CLAUDE.md §18.
+export async function setTransportFee(
+  shipmentId: string,
+  transporterId: string,
+  amount: number,
+  payer: "grower" | "retailer" | "split",
+  splitGrowerPct?: number
+) {
+  if (!Number.isFinite(amount) || amount < 0) throw new Error("Enter a valid transport fee amount.");
+  const shipment = await prisma.shipment.findUnique({ where: { id: shipmentId } });
+  if (!shipment || shipment.transporterId !== transporterId) {
+    throw new Error("Not authorized for this shipment.");
+  }
+  await prisma.shipment.update({
+    where: { id: shipmentId },
+    data: {
+      transportFeeAmount: amount,
+      transportFeePayer: payer,
+      transportFeeSplitGrowerPct: payer === "split" ? (splitGrowerPct ?? 50) : null,
+    },
+  });
+}
+
+export async function uploadTransportInvoice(shipmentId: string, transporterId: string, file: File) {
+  const shipment = await prisma.shipment.findUnique({ where: { id: shipmentId } });
+  if (!shipment || shipment.transporterId !== transporterId) {
+    throw new Error("Not authorized for this shipment.");
+  }
+  const url = await saveDocumentFile(`shipment-${shipmentId}-transport-invoice`, file);
+  await prisma.shipment.update({ where: { id: shipmentId }, data: { transportInvoiceUrl: url } });
+}
+
+// The transporter confirms they were actually paid — they're the party
+// owed the money, so they're the most realistic source of "yes, this
+// settled." Admin can also mark it, same oversight fallback as Commission.
+export async function markTransportFeePaid(shipmentId: string, actorId: string, actorRole: string) {
+  const shipment = await prisma.shipment.findUnique({ where: { id: shipmentId } });
+  if (!shipment) throw new Error("Shipment not found.");
+  if (actorRole !== "admin" && !(actorRole === "transporter" && shipment.transporterId === actorId)) {
+    throw new Error("Only the assigned transporter or an admin can mark this paid.");
+  }
+  if (shipment.transportFeeAmount === null) throw new Error("No transport fee set on this shipment.");
+  await prisma.shipment.update({
+    where: { id: shipmentId },
+    data: { transportFeeStatus: "paid", transportFeePaidAt: new Date() },
+  });
+}
+
 // One step at a time, no skipping ahead — see NEXT_SHIPMENT_STATUS.
 export async function advanceShipmentStatus(
   shipmentId: string,
@@ -110,6 +215,21 @@ export async function advanceShipmentStatus(
   const next = NEXT_SHIPMENT_STATUS[shipment.status as ShipmentStatus];
   if (!next) {
     throw new Error("This shipment is already delivered.");
+  }
+
+  // If a pickup/delivery window was ever proposed, both the grower and
+  // retailer have to accept it before the shipment can leave "assigned" —
+  // see proposeShipmentSchedule/acceptShipmentSchedule above and CLAUDE.md
+  // §13. No schedule proposed at all = no gate, so this stays backward
+  // compatible with deals that skip scheduling entirely.
+  if (
+    shipment.status === "assigned" &&
+    shipment.scheduledPickupAt &&
+    (!shipment.growerAcceptedSchedule || !shipment.retailerAcceptedSchedule)
+  ) {
+    throw new Error(
+      "Both the grower and retailer need to accept the proposed pickup/delivery time before this can move to picked up."
+    );
   }
 
   let podUrl: string | undefined;

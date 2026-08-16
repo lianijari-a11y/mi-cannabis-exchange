@@ -2,6 +2,7 @@ import "server-only";
 import { prisma } from "@/lib/prisma";
 import { notify } from "@/lib/notifications";
 import { generateInvoiceForDeal } from "@/lib/invoice";
+import { pushDealToPosIfConnected } from "@/lib/pos-integration";
 import type { Terms } from "@/lib/constants";
 
 export type RoundAction = "counter" | "accept" | "reject";
@@ -64,13 +65,27 @@ const DEAL_SHIPMENT_INCLUDE = {
   // reading this narrow to growerOwes/retailerOwes per viewer, never show
   // the other party's owed figure as if it were the viewer's own.
   commission: true,
+  rejection: true,
 };
+
+// No background jobs in this app — same lazy-sweep pattern as
+// lib/listings.ts's expireStaleListings, called from every thread read
+// path below. See CLAUDE.md §18.
+async function expireStaleThreads() {
+  await prisma.offerThread.updateMany({
+    where: { status: "open", expiresAt: { not: null, lte: new Date() } },
+    data: { status: "expired" },
+  });
+}
 
 // Get-or-create the one thread for a (listing, retailer) pair. An existing
 // thread always continues (e.g. a listing that expires mid-negotiation
 // doesn't kill an in-flight conversation) — but a *new* thread can't start
-// on a listing that's no longer active, expired or not.
-export async function getOrCreateThread(listingId: string, retailerId: string) {
+// on a listing that's no longer active, expired or not. `expiresAt` is the
+// retailer's own choice at the moment they open the negotiation (null =
+// no expiration) — see CLAUDE.md §18.
+export async function getOrCreateThread(listingId: string, retailerId: string, expiresAt?: Date | null) {
+  await expireStaleThreads();
   const existing = await prisma.offerThread.findUnique({
     where: { listingId_retailerId: { listingId, retailerId } },
   });
@@ -81,7 +96,7 @@ export async function getOrCreateThread(listingId: string, retailerId: string) {
     throw new Error("This listing is no longer active.");
   }
 
-  return prisma.offerThread.create({ data: { listingId, retailerId } });
+  return prisma.offerThread.create({ data: { listingId, retailerId, expiresAt: expiresAt ?? null } });
 }
 
 // The negotiation state machine. Either party can counter any number of
@@ -96,6 +111,8 @@ export async function addOfferRound(params: {
   quantity?: number;
   terms?: Terms;
   message?: string;
+  rejectionFeeRate?: number;
+  rejectionFeePayer?: "grower" | "retailer" | "split";
 }) {
   const thread = await prisma.offerThread.findUnique({
     where: { id: params.threadId },
@@ -124,6 +141,8 @@ export async function addOfferRound(params: {
       quantity: params.quantity ?? null,
       terms: params.terms ?? null,
       message: params.message ?? null,
+      rejectionFeeRate: params.rejectionFeeRate ?? null,
+      rejectionFeePayer: params.rejectionFeePayer ?? null,
     },
   });
 
@@ -159,6 +178,13 @@ export async function addOfferRound(params: {
     const finalPrice = params.price ?? lastProposal?.price ?? thread.listing.pricePerUnit;
     const finalQuantity = params.quantity ?? lastProposal?.quantity ?? thread.listing.quantity;
     const finalTerms = params.terms ?? lastProposal?.terms ?? thread.listing.terms;
+    // Rejection fee terms — negotiated by the buyer/seller themselves (not
+    // broker-set), same resolution pattern as price/quantity/terms above.
+    // 0/"split" if it was never discussed — see CLAUDE.md §14.
+    const rejectionFeeRate =
+      params.rejectionFeeRate ?? lastProposal?.rejectionFeeRate ?? 0;
+    const rejectionFeePayer =
+      params.rejectionFeePayer ?? lastProposal?.rejectionFeePayer ?? "split";
 
     const sellerId = thread.listing.postedById;
     const retailerId = thread.retailerId;
@@ -175,6 +201,8 @@ export async function addOfferRound(params: {
           finalPrice,
           finalQuantity,
           finalTerms,
+          rejectionFeeRate,
+          rejectionFeePayer,
         },
       }),
     ]);
@@ -183,6 +211,10 @@ export async function addOfferRound(params: {
     // stuck waiting on the grower. The grower can still upload their own
     // file to override it (see lib/shipments.ts's uploadInvoice).
     await generateInvoiceForDeal(deal.id);
+
+    // If the seller has auto-sync POS turned on, log a (currently stub-only)
+    // sync attempt — see lib/pos-integration.ts. Never blocks deal creation.
+    await pushDealToPosIfConnected(deal.id, sellerId);
 
     await notify(
       otherPartyId,
@@ -198,6 +230,7 @@ export async function addOfferRound(params: {
 // ---------- Retailer-facing (anonymized) ----------
 
 export async function threadsForRetailer(retailerId: string) {
+  await expireStaleThreads();
   return prisma.offerThread.findMany({
     where: { retailerId },
     include: {
@@ -224,6 +257,7 @@ export async function threadsForRetailer(retailerId: string) {
 // One retailer's thread on one listing, if it exists — rounds only, no
 // seller identity (the listing itself is already fetched anonymized).
 export async function threadForRetailerListing(listingId: string, retailerId: string) {
+  await expireStaleThreads();
   return prisma.offerThread.findUnique({
     where: { listingId_retailerId: { listingId, retailerId } },
     include: { rounds: { orderBy: { createdAt: "asc" } }, deal: { include: DEAL_SHIPMENT_INCLUDE } },
@@ -233,6 +267,7 @@ export async function threadForRetailerListing(listingId: string, retailerId: st
 // ---------- Seller-facing (anonymized retailer identity) ----------
 
 export async function threadsForSeller(sellerId: string) {
+  await expireStaleThreads();
   return prisma.offerThread.findMany({
     where: { listing: { postedById: sellerId } },
     include: {
@@ -247,6 +282,7 @@ export async function threadsForSeller(sellerId: string) {
 // Threads for one listing, scoped to that listing's seller — used on the
 // seller's listing-detail page. Retailer identity stays anonymized.
 export async function threadsForListing(listingId: string, sellerId: string) {
+  await expireStaleThreads();
   return prisma.offerThread.findMany({
     where: { listingId, listing: { postedById: sellerId } },
     include: {

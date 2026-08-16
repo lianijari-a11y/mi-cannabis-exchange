@@ -7,6 +7,8 @@ const NAV = [
   { href: "/retailer", label: "Browse inventory" },
   { href: "/retailer/negotiations", label: "My negotiations" },
   { href: "/retailer/watchlist", label: "Watchlist" },
+  { href: "/retailer/requests", label: "Wanted board" },
+  { href: "/retailer/settings", label: "Settings" },
 ];
 
 export default async function WatchlistPage() {

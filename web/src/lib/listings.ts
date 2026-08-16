@@ -33,7 +33,8 @@ export async function createListing(
   postedById: string,
   postedByRole: string,
   input: NewListingInput,
-  files: File[]
+  files: File[],
+  createdBySalesRepId?: string
 ) {
   if (!SELLER_ROLES.includes(postedByRole as (typeof SELLER_ROLES)[number])) {
     throw new Error("Only growers, processors, and brokers can post listings.");
@@ -42,6 +43,7 @@ export async function createListing(
   const listing = await prisma.listing.create({
     data: {
       postedById,
+      createdBySalesRepId: createdBySalesRepId ?? null,
       strainName: input.strainName,
       category: input.category,
       thcPercent: input.thcPercent,
@@ -58,7 +60,15 @@ export async function createListing(
     if (!file || file.size === 0) continue;
     const saved = await saveMediaFile(listing.id, file);
     await prisma.listingMedia.create({
-      data: { listingId: listing.id, url: saved.url, type: saved.type, sortOrder: i },
+      data: {
+        listingId: listing.id,
+        url: saved.url,
+        type: saved.type,
+        sortOrder: i,
+        redactionAttempted: saved.redactionAttempted,
+        redactionRegionsFound: saved.redactionRegionsFound,
+        redactionError: saved.redactionError ?? null,
+      },
     });
   }
 
@@ -79,10 +89,32 @@ export async function listingsForSeller(sellerId: string) {
 // The Retailer-facing feed. This is the anonymization boundary: the poster's
 // real User row is never selected, only their generated anonHandle. Do not
 // add `postedBy: true` (full relation) to this query — see CLAUDE.md §6.
-export async function activeListingsFeed() {
+// `excludeDismissedFor`: when given a retailerId, listings that retailer
+// marked "Not interested" are left out — see lib/dismissals.ts. Purely a
+// per-retailer view filter, never affects what anyone else sees.
+export async function activeListingsFeed(excludeDismissedFor?: string) {
   await expireStaleListings();
+  const dismissedIds = excludeDismissedFor
+    ? await prisma.listingDismissal.findMany({
+        where: { retailerId: excludeDismissedFor },
+        select: { listingId: true },
+      })
+    : [];
+
   return prisma.listing.findMany({
-    where: { status: "active" },
+    where: {
+      status: "active",
+      ...(dismissedIds.length ? { id: { notIn: dismissedIds.map((d) => d.listingId) } } : {}),
+      // Distribution gate — see CLAUDE.md §18. Default "all" listings are
+      // visible to every retailer, same as always; an admin-restricted
+      // "exclusive" listing only shows to a retailer named on it.
+      OR: [
+        { visibility: "all" },
+        ...(excludeDismissedFor
+          ? [{ visibility: "exclusive", exclusiveRetailerIds: { has: excludeDismissedFor } }]
+          : []),
+      ],
+    },
     select: {
       id: true,
       strainName: true,
@@ -96,10 +128,25 @@ export async function activeListingsFeed() {
       status: true,
       createdAt: true,
       expiresAt: true,
+      lastConfirmedAt: true,
       media: true,
       postedBy: { select: { anonHandle: true } },
     },
     orderBy: { createdAt: "desc" },
+  });
+}
+
+// One-click "still available" confirmation — bumps lastConfirmedAt so the
+// seller's dashboard stops flagging it as stale, without having to re-enter
+// or change anything about the listing. See CLAUDE.md §13.
+export async function confirmListingFresh(listingId: string, sellerId: string) {
+  const listing = await prisma.listing.findUnique({ where: { id: listingId } });
+  if (!listing || listing.postedById !== sellerId) {
+    throw new Error("Not authorized for this listing.");
+  }
+  await prisma.listing.update({
+    where: { id: listingId },
+    data: { lastConfirmedAt: new Date() },
   });
 }
 
@@ -123,6 +170,18 @@ export async function getListingAnonymized(listingId: string, retailerId: string
     where: {
       id: listingId,
       OR: [{ status: "active" }, { threads: { some: { retailerId } } }],
+      // Distribution gate — same as activeListingsFeed. A retailer who
+      // already has a thread on it can still reach it even if visibility
+      // later changed, since the OR above already covers that case.
+      AND: [
+        {
+          OR: [
+            { visibility: "all" },
+            { visibility: "exclusive", exclusiveRetailerIds: { has: retailerId } },
+            { threads: { some: { retailerId } } },
+          ],
+        },
+      ],
     },
     select: {
       id: true,

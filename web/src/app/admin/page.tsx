@@ -1,10 +1,19 @@
 import { requireRole } from "@/lib/dal";
 import { PortalShell } from "@/components/portal-shell";
 import { pendingLicenseUsers, allUsers, licenseExpiryAlerts } from "@/lib/admin";
+import { transporterRating, sellerRating, retailerRating } from "@/lib/market";
+import { StateMarketWidget } from "@/components/state-market-widget";
 import { ROLE_LABELS, type Role } from "@/lib/constants";
-import { reviewLicense, togglePreferredTransporter } from "./actions";
+import { reviewLicense, togglePreferredTransporter, setSalesRepRate } from "./actions";
 
-const NAV = [{ href: "/admin", label: "Overview" }];
+const NAV = [
+  { href: "/admin", label: "Overview" },
+  { href: "/admin/listings", label: "All listings" },
+  { href: "/admin/listings/new", label: "Post for a seller" },
+  { href: "/admin/sales-reps", label: "Sales rep earnings" },
+  { href: "/admin/data-uploads", label: "Data uploads" },
+  { href: "/admin/metrc", label: "METRC" },
+];
 
 export default async function AdminPage() {
   await requireRole("admin");
@@ -14,8 +23,23 @@ export default async function AdminPage() {
     licenseExpiryAlerts(),
   ]);
 
+  // "Who works best" across every role (CLAUDE.md §13) — same honesty rule
+  // as the retailer-facing seller rating: no score until there's history.
+  const ratings = await Promise.all(
+    users.map((u) =>
+      u.role === "transporter"
+        ? transporterRating(u.id)
+        : u.role === "retailer"
+        ? retailerRating(u.id)
+        : u.role === "grower" || u.role === "processor" || u.role === "broker"
+        ? sellerRating(u.id)
+        : Promise.resolve({ score: null, count: 0 })
+    )
+  );
+
   return (
     <PortalShell roleLabel="Admin" navItems={NAV}>
+      <StateMarketWidget />
       <div className="space-y-8">
         {expiring.length > 0 && (
           <section>
@@ -129,11 +153,13 @@ export default async function AdminPage() {
                   <th className="text-left px-4 py-2 font-medium">Role</th>
                   <th className="text-left px-4 py-2 font-medium">License status</th>
                   <th className="text-left px-4 py-2 font-medium">Handle</th>
+                  <th className="text-left px-4 py-2 font-medium">Rating</th>
                   <th className="text-left px-4 py-2 font-medium">Preferred</th>
+                  <th className="text-left px-4 py-2 font-medium">Commission rate</th>
                 </tr>
               </thead>
               <tbody>
-                {users.map((user) => (
+                {users.map((user, i) => (
                   <tr key={user.id} className="border-t border-gray-100 dark:border-gray-800">
                     <td className="px-4 py-2 text-gray-900 dark:text-gray-100">
                       {user.businessName ?? user.fullName}
@@ -143,8 +169,19 @@ export default async function AdminPage() {
                     </td>
                     <td className="px-4 py-2 text-gray-600 dark:text-gray-300">
                       {user.licenseVerification}
+                      {user.licenseVerification === "approved" && user.licenseAutoMatched && (
+                        <span
+                          className="ml-1.5 text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300"
+                          title="Approved automatically by matching the license number against the state registry — not reviewed by an Admin. Matching a license number isn't proof of who's actually behind the account, so revoke this if anything looks off."
+                        >
+                          auto-matched
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-2 text-gray-400">{user.anonHandle}</td>
+                    <td className="px-4 py-2 text-gray-600 dark:text-gray-300">
+                      {ratings[i].score != null ? `★ ${ratings[i].score} (${ratings[i].count})` : "—"}
+                    </td>
                     <td className="px-4 py-2">
                       {user.role === "transporter" && (
                         <form action={togglePreferredTransporter}>
@@ -163,6 +200,27 @@ export default async function AdminPage() {
                             }`}
                           >
                             {user.preferredTransporter ? "Preferred" : "Make preferred"}
+                          </button>
+                        </form>
+                      )}
+                    </td>
+                    <td className="px-4 py-2">
+                      {user.role === "sales_rep" && (
+                        <form action={setSalesRepRate} className="flex items-center gap-1">
+                          <input type="hidden" name="userId" value={user.id} />
+                          <input
+                            name="rate"
+                            type="number"
+                            step="0.1"
+                            min="0"
+                            max="100"
+                            defaultValue={user.salesRepCommissionRate ?? ""}
+                            placeholder="0"
+                            className="w-14 border border-gray-300 dark:border-gray-700 rounded px-1 py-0.5 text-xs bg-transparent"
+                          />
+                          <span className="text-xs text-gray-400">%</span>
+                          <button type="submit" className="text-[10px] text-green-700 dark:text-green-400 underline">
+                            Set
                           </button>
                         </form>
                       )}

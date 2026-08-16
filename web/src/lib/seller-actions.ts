@@ -2,10 +2,11 @@ import "server-only";
 import { redirect } from "next/navigation";
 import { requireRole } from "@/lib/dal";
 import { prisma } from "@/lib/prisma";
-import { createListing } from "@/lib/listings";
+import { createListing, confirmListingFresh } from "@/lib/listings";
 import { addOfferRound, type RoundAction } from "@/lib/offers";
-import { uploadInvoice } from "@/lib/shipments";
+import { uploadInvoice, acceptShipmentSchedule } from "@/lib/shipments";
 import { respondToSplitContract } from "@/lib/split-contracts";
+import { acceptRejectionCounter, requireReturnInsteadOfCounter } from "@/lib/commission";
 import { CATEGORIES, LICENSED_ROLES, TERMS, type SellerRole } from "@/lib/constants";
 
 // Shared by /grower, /processor, /broker "post a listing" actions — the
@@ -16,9 +17,13 @@ export async function handleCreateListing(role: SellerRole, formData: FormData) 
 
   if (LICENSED_ROLES.includes(role as (typeof LICENSED_ROLES)[number])) {
     const user = await prisma.user.findUnique({ where: { id: session.user.id } });
-    if (user?.licenseVerification !== "approved") {
+    // Pending review ("unverified") is allowed through — only a rejected
+    // license blocks posting. See CLAUDE.md §12: sellers post multiple times
+    // a day and shouldn't be stuck waiting on Admin for a license that's
+    // usually a clean match anyway.
+    if (user?.licenseVerification === "rejected") {
       redirect(`/${role}/listings/new?error=${encodeURIComponent(
-        "Your license must be approved by an admin before you can post listings."
+        "Your license was rejected by an admin. Contact support to resolve this before posting."
       )}`);
     }
   }
@@ -81,6 +86,8 @@ export async function handleSellerRespond(role: SellerRole, formData: FormData) 
   const priceRaw = String(formData.get("price") ?? "").trim();
   const termsRaw = String(formData.get("terms") ?? "").trim();
   const message = String(formData.get("message") ?? "").trim();
+  const rejectionFeeRateRaw = String(formData.get("rejectionFeeRate") ?? "").trim();
+  const rejectionFeePayerRaw = String(formData.get("rejectionFeePayer") ?? "").trim();
 
   await addOfferRound({
     threadId,
@@ -90,6 +97,8 @@ export async function handleSellerRespond(role: SellerRole, formData: FormData) 
     price: priceRaw ? Number(priceRaw) : undefined,
     terms: (termsRaw || undefined) as never,
     message: message || undefined,
+    rejectionFeeRate: rejectionFeeRateRaw ? Number(rejectionFeeRateRaw) : undefined,
+    rejectionFeePayer: (rejectionFeePayerRaw || undefined) as never,
   });
 
   redirect(`/${role}/listings/${formData.get("listingId")}`);
@@ -122,5 +131,41 @@ export async function handleSplitContractRespond(role: SellerRole, formData: For
   const decision = String(formData.get("decision") ?? "") as "accepted" | "rejected";
 
   await respondToSplitContract(contractId, session.user.id, decision);
+  redirect(`/${role}/listings/${listingId}`);
+}
+
+// One-click "still available" confirmation from the seller's own listing
+// list — see lib/listings.ts's confirmListingFresh and CLAUDE.md §13.
+export async function handleConfirmListingFresh(role: SellerRole, formData: FormData) {
+  const session = await requireRole(role);
+  const listingId = String(formData.get("listingId") ?? "");
+  await confirmListingFresh(listingId, session.user.id);
+  redirect(`/${role}`);
+}
+
+// Seller accepts the transporter's proposed pickup/delivery schedule.
+export async function handleAcceptShipmentSchedule(role: SellerRole, formData: FormData) {
+  const session = await requireRole(role);
+  const shipmentId = String(formData.get("shipmentId") ?? "");
+  const listingId = String(formData.get("listingId") ?? "");
+  await acceptShipmentSchedule(shipmentId, session.user.id, "grower");
+  redirect(`/${role}/listings/${listingId}`);
+}
+
+// Seller's two responses to a retailer's post-rejection counter-offer — see
+// lib/commission.ts and CLAUDE.md §13.
+export async function handleAcceptRejectionCounter(role: SellerRole, formData: FormData) {
+  const session = await requireRole(role);
+  const dealId = String(formData.get("dealId") ?? "");
+  const listingId = String(formData.get("listingId") ?? "");
+  await acceptRejectionCounter(dealId, session.user.id);
+  redirect(`/${role}/listings/${listingId}`);
+}
+
+export async function handleRequireReturnInsteadOfCounter(role: SellerRole, formData: FormData) {
+  const session = await requireRole(role);
+  const dealId = String(formData.get("dealId") ?? "");
+  const listingId = String(formData.get("listingId") ?? "");
+  await requireReturnInsteadOfCounter(dealId, session.user.id);
   redirect(`/${role}/listings/${listingId}`);
 }
