@@ -1,10 +1,17 @@
 import { allThreadsForBroker, allDealsForBroker } from "@/lib/offers";
 import { TERMS_LABELS, SHIPMENT_STATUS_LABELS, type Terms, type ShipmentStatus } from "@/lib/constants";
+import { CommissionForm } from "@/components/broker/commission-form";
 
 // Full, real-identity, platform-wide view — the one place in the app where
 // both sides of a blind negotiation are ever shown together. See CLAUDE.md
 // decisions #2 and #3.
-export async function BrokerDashboard() {
+export async function BrokerDashboard({
+  setCommissionAction,
+  markCommissionPaidAction,
+}: {
+  setCommissionAction: (formData: FormData) => void;
+  markCommissionPaidAction: (formData: FormData) => void;
+}) {
   const [threads, deals] = await Promise.all([allThreadsForBroker(), allDealsForBroker()]);
   const openThreads = threads.filter((t) => t.status === "open");
   const closedThreads = threads.filter((t) => t.status !== "open");
@@ -123,6 +130,24 @@ export async function BrokerDashboard() {
                   </span>
                 </p>
               )}
+              {deal.productStatus === "accepted" && (
+                <p className="mt-1 text-xs text-green-700 dark:text-green-400 font-medium">
+                  Product accepted — final
+                </p>
+              )}
+              {deal.productStatus === "rejected" && (
+                <p className="mt-1 text-xs text-red-600 dark:text-red-400 font-medium">
+                  Product rejected — needs off-platform resolution
+                </p>
+              )}
+              <div className="mt-2 pt-2 border-t border-gray-100 dark:border-gray-800">
+                <CommissionForm
+                  dealId={deal.id}
+                  commission={deal.commission}
+                  setAction={setCommissionAction}
+                  markPaidAction={markCommissionPaidAction}
+                />
+              </div>
             </div>
           ))}
         </div>

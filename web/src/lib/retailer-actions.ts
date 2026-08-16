@@ -1,9 +1,12 @@
 import "server-only";
 import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/dal";
 import { prisma } from "@/lib/prisma";
 import { getOrCreateThread, addOfferRound, type RoundAction } from "@/lib/offers";
 import { acceptInvoiceAndAssignTransporter } from "@/lib/shipments";
+import { toggleWatchlist } from "@/lib/watchlist";
+import { acceptProduct, rejectProduct } from "@/lib/commission";
 
 export async function handleRetailerRespond(formData: FormData) {
   const session = await requireRole("retailer");
@@ -65,4 +68,30 @@ export async function handleAcceptInvoice(formData: FormData) {
 
   await acceptInvoiceAndAssignTransporter(dealId, session.user.id, transporterId);
   redirect(`/retailer/listings/${listingId}`);
+}
+
+export async function handleAcceptProduct(formData: FormData) {
+  const session = await requireRole("retailer");
+  const dealId = String(formData.get("dealId") ?? "");
+  const listingId = String(formData.get("listingId") ?? "");
+  await acceptProduct(dealId, session.user.id);
+  redirect(`/retailer/listings/${listingId}`);
+}
+
+export async function handleRejectProduct(formData: FormData) {
+  const session = await requireRole("retailer");
+  const dealId = String(formData.get("dealId") ?? "");
+  const listingId = String(formData.get("listingId") ?? "");
+  const reason = String(formData.get("reason") ?? "").trim();
+  await rejectProduct(dealId, session.user.id, reason || null);
+  redirect(`/retailer/listings/${listingId}`);
+}
+
+export async function handleToggleWatchlist(listingId: string) {
+  const session = await requireRole("retailer");
+  const nowWatching = await toggleWatchlist(session.user.id, listingId);
+  revalidatePath("/retailer");
+  revalidatePath(`/retailer/listings/${listingId}`);
+  revalidatePath("/retailer/watchlist");
+  return nowWatching;
 }

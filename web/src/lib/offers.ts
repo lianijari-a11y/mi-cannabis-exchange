@@ -1,9 +1,54 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
+import { notify } from "@/lib/notifications";
+import { generateInvoiceForDeal } from "@/lib/invoice";
 import type { Terms } from "@/lib/constants";
 
 export type RoundAction = "counter" | "accept" | "reject";
 export type ActorRole = "retailer" | "seller";
+
+// Don't notify on every reload — only if the last notification-worthy view
+// from this same viewer role was more than this long ago.
+const VIEW_NOTIFY_THROTTLE_MS = 10 * 60 * 1000;
+
+// Called whenever a party opens a thread's detail — increments that side's
+// view counter and, throttled, alerts the *other* party that their offer
+// was viewed (and how many times total). Never notifies the viewer
+// themselves, by construction (seller view -> notify retailer, and
+// vice versa).
+export async function recordThreadView(threadId: string, viewerRole: ActorRole) {
+  const thread = await prisma.offerThread.findUnique({
+    where: { id: threadId },
+    include: { listing: { select: { postedById: true, strainName: true } } },
+  });
+  if (!thread) return;
+
+  const isSeller = viewerRole === "seller";
+  const prevViewedAt = isSeller ? thread.sellerLastViewedAt : thread.retailerLastViewedAt;
+  const shouldNotify =
+    !prevViewedAt || Date.now() - prevViewedAt.getTime() > VIEW_NOTIFY_THROTTLE_MS;
+
+  const updated = await prisma.offerThread.update({
+    where: { id: threadId },
+    data: isSeller
+      ? { sellerViewCount: { increment: 1 }, sellerLastViewedAt: new Date() }
+      : { retailerViewCount: { increment: 1 }, retailerLastViewedAt: new Date() },
+  });
+
+  if (!shouldNotify) return;
+
+  const viewCount = isSeller ? updated.sellerViewCount : updated.retailerViewCount;
+  const recipientId = isSeller ? thread.retailerId : thread.listing.postedById;
+  const viewerLabel = isSeller ? "The seller" : "The retailer";
+  await notify(
+    recipientId,
+    "offer_viewed",
+    `${viewerLabel} viewed your offer on ${thread.listing.strainName} (viewed ${viewCount} time${
+      viewCount === 1 ? "" : "s"
+    } total).`,
+    threadId
+  );
+}
 
 // Shared shape for surfacing a Deal's shipment to the seller/retailer sides —
 // transporter identity is real (not anonymized), since transport isn't part
@@ -15,6 +60,10 @@ const DEAL_SHIPMENT_INCLUDE = {
       events: { orderBy: { createdAt: "asc" as const } },
     },
   },
+  // Only the payer-relevant amount is meaningful to each side — components
+  // reading this narrow to growerOwes/retailerOwes per viewer, never show
+  // the other party's owed figure as if it were the viewer's own.
+  commission: true,
 };
 
 // Get-or-create the one thread for a (listing, retailer) pair. An existing
@@ -78,11 +127,30 @@ export async function addOfferRound(params: {
     },
   });
 
+  const otherPartyId =
+    params.actorRole === "seller" ? thread.retailerId : thread.listing.postedById;
+  const actorLabel = params.actorRole === "seller" ? "The seller" : "The retailer";
+
   if (params.action === "reject") {
     await prisma.offerThread.update({
       where: { id: thread.id },
       data: { status: "rejected" },
     });
+    await notify(
+      otherPartyId,
+      "offer_rejected",
+      `${actorLabel} rejected the negotiation on ${thread.listing.strainName}.`,
+      thread.id
+    );
+  } else if (params.action === "counter") {
+    await notify(
+      otherPartyId,
+      "offer_countered",
+      `${actorLabel} sent a counter-offer on ${thread.listing.strainName}${
+        params.price != null ? ` — $${params.price}` : ""
+      }.`,
+      thread.id
+    );
   } else if (params.action === "accept") {
     // Terms of the deal are whatever was most recently on the table — the
     // round being accepted, if it carried terms, otherwise the last prior
@@ -95,7 +163,7 @@ export async function addOfferRound(params: {
     const sellerId = thread.listing.postedById;
     const retailerId = thread.retailerId;
 
-    await prisma.$transaction([
+    const [, , deal] = await prisma.$transaction([
       prisma.offerThread.update({ where: { id: thread.id }, data: { status: "accepted" } }),
       prisma.listing.update({ where: { id: thread.listingId }, data: { status: "closed" } }),
       prisma.deal.create({
@@ -110,6 +178,18 @@ export async function addOfferRound(params: {
         },
       }),
     ]);
+
+    // Auto-generate an invoice immediately — the retailer shouldn't be
+    // stuck waiting on the grower. The grower can still upload their own
+    // file to override it (see lib/shipments.ts's uploadInvoice).
+    await generateInvoiceForDeal(deal.id);
+
+    await notify(
+      otherPartyId,
+      "offer_accepted",
+      `${actorLabel} accepted the deal on ${thread.listing.strainName} at $${finalPrice}/${thread.listing.unit}.`,
+      thread.id
+    );
   }
 
   return round;
@@ -212,6 +292,7 @@ export async function allDealsForBroker() {
       retailer: true,
       thread: { include: { listing: true } },
       shipment: { include: { transporter: true, events: { orderBy: { createdAt: "asc" } } } },
+      commission: true,
     },
     orderBy: { createdAt: "desc" },
   });

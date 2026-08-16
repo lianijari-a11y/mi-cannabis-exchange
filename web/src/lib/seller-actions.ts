@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { createListing } from "@/lib/listings";
 import { addOfferRound, type RoundAction } from "@/lib/offers";
 import { uploadInvoice } from "@/lib/shipments";
+import { respondToSplitContract } from "@/lib/split-contracts";
 import { CATEGORIES, LICENSED_ROLES, TERMS, type SellerRole } from "@/lib/constants";
 
 // Shared by /grower, /processor, /broker "post a listing" actions — the
@@ -108,5 +109,18 @@ export async function handleUploadInvoice(role: SellerRole, formData: FormData) 
   }
 
   await uploadInvoice(dealId, session.user.id, file);
+  redirect(`/${role}/listings/${listingId}`);
+}
+
+// Grower accepts/rejects a processor's toll-processing (split-contract)
+// proposal on one of their listings.
+export async function handleSplitContractRespond(role: SellerRole, formData: FormData) {
+  const session = await requireRole(role);
+
+  const contractId = String(formData.get("contractId") ?? "");
+  const listingId = String(formData.get("listingId") ?? "");
+  const decision = String(formData.get("decision") ?? "") as "accepted" | "rejected";
+
+  await respondToSplitContract(contractId, session.user.id, decision);
   redirect(`/${role}/listings/${listingId}`);
 }

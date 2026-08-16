@@ -5,6 +5,8 @@ import { createListing } from "./actions";
 
 const NAV = [
   { href: "/processor", label: "My listings" },
+  { href: "/processor/sourcing", label: "Sourcing" },
+  { href: "/processor/contracts", label: "My contracts" },
   { href: "/processor/listings/new", label: "Post inventory" },
 ];
 

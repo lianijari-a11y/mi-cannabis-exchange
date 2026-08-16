@@ -1,34 +1,47 @@
 import { notFound } from "next/navigation";
-import { Droplet } from "lucide-react";
+import { Droplet, Star, Eye } from "lucide-react";
 import { getListingAnonymized } from "@/lib/listings";
-import { threadForRetailerListing } from "@/lib/offers";
+import { threadForRetailerListing, recordThreadView } from "@/lib/offers";
 import { transportersForSelection } from "@/lib/shipments";
+import { sellerRatingForListing } from "@/lib/market";
+import { isWatchlisted } from "@/lib/watchlist";
 import { CATEGORY_LABELS, TERMS_LABELS, type Category, type Terms } from "@/lib/constants";
 import { RespondForm } from "@/components/seller/respond-form";
 import { DealPanelRetailer } from "@/components/deal/deal-panel-retailer";
 import { timeRemaining } from "@/components/retailer/listing-card";
+import { SoldComps } from "@/components/sold-comps";
+import { WatchlistButton } from "@/components/retailer/watchlist-button";
 
 export async function RetailerListingDetail({
   listingId,
   retailerId,
   respondAction,
   acceptInvoiceAction,
+  acceptProductAction,
+  rejectProductAction,
   error,
 }: {
   listingId: string;
   retailerId: string;
   respondAction: (formData: FormData) => void;
   acceptInvoiceAction: (formData: FormData) => void;
+  acceptProductAction: (formData: FormData) => void;
+  rejectProductAction: (formData: FormData) => void;
   error?: string;
 }) {
   const listing = await getListingAnonymized(listingId, retailerId);
   if (!listing) notFound();
 
   const thread = await threadForRetailerListing(listingId, retailerId);
-  const transporters =
+  if (thread) await recordThreadView(thread.id, "retailer");
+
+  const [transporters, rating, watching] = await Promise.all([
     thread?.status === "accepted" && thread.deal && !thread.deal.shipment
-      ? await transportersForSelection()
-      : [];
+      ? transportersForSelection()
+      : Promise.resolve([]),
+    sellerRatingForListing(listingId),
+    isWatchlisted(retailerId, listingId),
+  ]);
 
   return (
     <div className="space-y-6">
@@ -56,9 +69,19 @@ export async function RetailerListingDetail({
                 {CATEGORY_LABELS[listing.category as Category] ?? listing.category}
               </span>
             </div>
-            <span className="shrink-0 text-[10px] text-gray-400 dark:text-gray-500 border border-gray-200 dark:border-gray-700 rounded-full px-2 py-1">
-              {listing.postedBy.anonHandle}
-            </span>
+            <div className="shrink-0 flex flex-col items-end gap-1.5">
+              <span className="text-[10px] text-gray-400 dark:text-gray-500 border border-gray-200 dark:border-gray-700 rounded-full px-2 py-1">
+                {listing.postedBy.anonHandle}
+              </span>
+              {rating.score != null ? (
+                <span className="inline-flex items-center gap-1 text-[10px] text-amber-600 dark:text-amber-400">
+                  <Star className="w-3 h-3 fill-current" /> {rating.score} ({rating.count})
+                </span>
+              ) : (
+                <span className="text-[10px] text-gray-400">New seller — no history yet</span>
+              )}
+              <WatchlistButton listingId={listing.id} initialWatching={watching} />
+            </div>
           </div>
 
           <div className="mt-3 flex items-center gap-4 text-sm text-gray-600 dark:text-gray-300">
@@ -127,7 +150,14 @@ export async function RetailerListingDetail({
                 </li>
               ))}
             </ul>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Status: {thread.status}</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mb-1 flex items-center gap-2">
+              <span>Status: {thread.status}</span>
+              {thread.sellerViewCount > 0 && (
+                <span className="inline-flex items-center gap-1 text-gray-400">
+                  <Eye className="w-3 h-3" /> seller viewed {thread.sellerViewCount}x
+                </span>
+              )}
+            </p>
             {thread.status === "open" && (
               <RespondForm action={respondAction} threadId={thread.id} listingId={listing.id} />
             )}
@@ -138,11 +168,15 @@ export async function RetailerListingDetail({
                 listingId={listing.id}
                 transporters={transporters}
                 acceptInvoiceAction={acceptInvoiceAction}
+                acceptProductAction={acceptProductAction}
+                rejectProductAction={rejectProductAction}
               />
             )}
           </>
         )}
       </div>
+
+      <SoldComps category={listing.category} excludeListingId={listing.id} />
     </div>
   );
 }

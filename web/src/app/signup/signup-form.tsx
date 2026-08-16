@@ -82,6 +82,12 @@ export function SignupForm() {
               className={inputClass}
             />
           </div>
+          <div>
+            <label className={labelClass} htmlFor="licenseExpiry">
+              License expiration date (optional)
+            </label>
+            <input id="licenseExpiry" name="licenseExpiry" type="date" className={inputClass} />
+          </div>
         </>
       )}
 

@@ -1,6 +1,6 @@
 import { requireRole } from "@/lib/dal";
 import { PortalShell } from "@/components/portal-shell";
-import { pendingLicenseUsers, allUsers } from "@/lib/admin";
+import { pendingLicenseUsers, allUsers, licenseExpiryAlerts } from "@/lib/admin";
 import { ROLE_LABELS, type Role } from "@/lib/constants";
 import { reviewLicense, togglePreferredTransporter } from "./actions";
 
@@ -8,11 +8,57 @@ const NAV = [{ href: "/admin", label: "Overview" }];
 
 export default async function AdminPage() {
   await requireRole("admin");
-  const [pending, users] = await Promise.all([pendingLicenseUsers(), allUsers()]);
+  const [pending, users, expiring] = await Promise.all([
+    pendingLicenseUsers(),
+    allUsers(),
+    licenseExpiryAlerts(),
+  ]);
 
   return (
     <PortalShell roleLabel="Admin" navItems={NAV}>
       <div className="space-y-8">
+        {expiring.length > 0 && (
+          <section>
+            <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-3">
+              License expiration alerts
+            </h2>
+            <div className="space-y-2">
+              {expiring.map((user) => {
+                const expired = (user.daysLeft ?? 0) < 0;
+                return (
+                  <div
+                    key={user.id}
+                    className={`rounded-xl p-3 flex items-center justify-between border ${
+                      expired
+                        ? "bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-900"
+                        : "bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-900"
+                    }`}
+                  >
+                    <span className="text-sm text-gray-800 dark:text-gray-200">
+                      {user.businessName ?? user.fullName}{" "}
+                      <span className="text-xs text-gray-400">
+                        ({ROLE_LABELS[user.role as Role] ?? user.role}) — {user.licenseNumber}
+                      </span>
+                    </span>
+                    <span
+                      className={`text-xs font-medium ${
+                        expired
+                          ? "text-red-600 dark:text-red-400"
+                          : "text-amber-700 dark:text-amber-400"
+                      }`}
+                    >
+                      {expired
+                        ? `Expired ${Math.abs(user.daysLeft ?? 0)}d ago`
+                        : `${user.daysLeft}d left`}{" "}
+                      · {user.licenseExpiry?.toISOString().slice(0, 10)}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        )}
+
         <section>
           <h1 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">
             License verification queue

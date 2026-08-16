@@ -1,16 +1,19 @@
 // MI Cannabis Exchange — Prisma schema
-// SQLite for zero-setup local dev (see CLAUDE.md §7) — swap `provider`/`url`
-// to Postgres before production. SQLite has no native enum/array types, so
-// role/category/status fields are plain Strings; valid values are enforced
-// in application code (see src/lib/constants.ts) rather than at the DB layer.
+// Postgres (Supabase) — see CLAUDE.md §7. Started on SQLite for zero-setup
+// local dev; moved to hosted Postgres once a project was provisioned.
+// role/category/status fields stayed plain Strings (not native Postgres
+// enums) rather than churn every model now that a real enum type is
+// available — valid values are enforced in application code, see
+// src/lib/constants.ts.
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 // ---------- Core identity ----------
@@ -38,6 +41,7 @@ model User {
   licenseNumber       String?
   licenseType         String?
   licenseVerification String  @default("unverified") // unverified | approved | rejected
+  licenseExpiry       DateTime? // shown in Admin's license expiration alerts
 
   // Platform owner's default transporter, pre-selected (but overridable) when
   // a retailer picks who ships their deal. Admin-only toggle. Only meaningful
@@ -61,8 +65,30 @@ model User {
   dealsAsSeller      Deal[]          @relation("DealSeller")
   dealsAsRetailer    Deal[]          @relation("DealRetailer")
   shipmentsHauled    Shipment[]      @relation("ShipmentTransporter")
+  watchlistEntries   Watchlist[]
+  splitContractsAsGrower    SplitContract[] @relation("SplitContractGrower")
+  splitContractsAsProcessor SplitContract[] @relation("SplitContractProcessor")
+  notifications      Notification[]
+  commissionsSet      Commission[]
 
   @@map("users")
+}
+
+// In-app only — no SMS/push, see CLAUDE.md §8. type is a free-form tag
+// ("offer_viewed", "offer_countered", ...) used for icon/routing choices in
+// the UI, not enforced at the DB layer.
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String
+  message   String
+  threadId  String?
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId, read])
+  @@map("notifications")
 }
 
 // ---------- Listings ----------
@@ -92,9 +118,71 @@ model Listing {
 
   media   ListingMedia[]
   threads OfferThread[]
+  watchlistedBy  Watchlist[]
+  splitContracts SplitContract[]
 
   @@index([status])
   @@map("listings")
+}
+
+// A retailer tracking a listing they haven't (yet) made an offer on.
+model Watchlist {
+  id         String   @id @default(cuid())
+  retailerId String
+  retailer   User     @relation(fields: [retailerId], references: [id], onDelete: Cascade)
+  listingId  String
+  listing    Listing  @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+
+  @@unique([retailerId, listingId])
+  @@map("watchlist_entries")
+}
+
+// Toll-processing agreement: a Processor sources raw material from a
+// Grower's listing not for a flat price, but for a % share of the finished
+// product's eventual value. One proposal per (listing, processor) pair — a
+// grower listing can receive proposals from multiple processors, same
+// pattern as OfferThread. Deliberately simpler than the price/terms
+// negotiation state machine (single propose -> accept/reject, no counter
+// loop) — a v1 scope cut, not an oversight.
+//
+// The platform never sets or takes a cut of the split — see CLAUDE.md's
+// no-commission design. Physical pickup/transport for a settled contract is
+// coordinated directly between grower and processor for now; wiring this
+// into the existing Shipment/transporter flow is a deferred follow-up
+// (same spirit as CLAUDE.md §8's other deferred items), not silently
+// treated as solved.
+//
+// status: "proposed" | "accepted" | "rejected" | "processing" | "finished" | "settled"
+model SplitContract {
+  id        String  @id @default(cuid())
+  listingId String
+  listing   Listing @relation(fields: [listingId], references: [id])
+
+  growerId    String
+  grower      User @relation("SplitContractGrower", fields: [growerId], references: [id])
+  processorId String
+  processor   User @relation("SplitContractProcessor", fields: [processorId], references: [id])
+
+  outputProduct  String
+  splitGrowerPct Float
+  note           String?
+
+  status String @default("proposed")
+
+  yieldQty  Float?
+  yieldUnit String?
+
+  settlementValue           Float?
+  settlementGrowerAmount    Float?
+  settlementProcessorAmount Float?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([listingId, processorId])
+  @@index([status])
+  @@map("split_contracts")
 }
 
 // type: "image" | "video"
@@ -122,6 +210,15 @@ model OfferThread {
   status    String   @default("open")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  // View tracking, per side — powers the "X viewed your offer N times"
+  // alert. Counts increment on every view (a reload counts as a view, same
+  // as most view-counters); notifications for it are throttled separately
+  // in lib/offers.ts so a reloading tab doesn't spam the other party.
+  sellerViewCount      Int       @default(0)
+  sellerLastViewedAt   DateTime?
+  retailerViewCount    Int       @default(0)
+  retailerLastViewedAt DateTime?
 
   rounds OfferRound[]
   deal   Deal?
@@ -175,18 +272,67 @@ model Deal {
   finalQuantity Float
   finalTerms    String
 
-  // Fulfillment: grower/processor uploads an invoice, retailer reviews and
-  // accepts it, which is what triggers transporter selection (see Shipment
-  // below). Nothing here is legally a completed transfer — see CLAUDE.md §2.
-  invoiceUrl        String?
-  invoiceUploadedAt DateTime?
-  invoiceAcceptedAt DateTime?
+  // Fulfillment: an invoice is auto-generated the moment the deal is
+  // created (see lib/invoice.ts) so the retailer is never blocked waiting
+  // on the grower; the grower can still upload their own file to override
+  // it (invoiceAutoGenerated flips to false). Retailer reviews and accepts
+  // it, which is what triggers transporter selection (see Shipment below).
+  // Nothing here is legally a completed transfer — see CLAUDE.md §2.
+  invoiceUrl           String?
+  invoiceUploadedAt    DateTime?
+  invoiceAcceptedAt    DateTime?
+  invoiceAutoGenerated Boolean   @default(false)
+
+  // Retailer's explicit accept/reject of the physically delivered product —
+  // only actionable once the Shipment reaches "delivered". Accepting shows
+  // a final-sale notice and is what triggers the commission amount to be
+  // computed (see Commission below). Rejecting is recorded but this app
+  // does NOT run a refund/return/dispute-resolution process — that's real-
+  // world, Broker-mediated, same caveat as CLAUDE.md §2's transfer language.
+  // status: "pending" | "accepted" | "rejected"
+  productStatus     String    @default("pending")
+  productDecisionAt DateTime?
 
   createdAt DateTime @default(now())
 
-  shipment Shipment?
+  shipment   Shipment?
+  commission Commission?
 
   @@map("deals")
+}
+
+// Broker-set commission on a Deal — see CLAUDE.md §10's explicit note that
+// this reverses the platform's earlier no-commission stance, confirmed with
+// the human on 2026-08-16 despite the still-open MI broker-licensing
+// question in §2. Any broker (platform-wide visibility, see decision #2)
+// can set or edit these terms on any deal; the dollar amount is computed
+// once the retailer accepts the delivered product (Deal.productStatus ->
+// "accepted"), then tracked to "paid" — this app never moves money itself,
+// same as every other financial figure here (see CLAUDE.md §8).
+// payerType: "grower" | "retailer" | "split"
+// status: "pending" | "paid"
+model Commission {
+  id            String @id @default(cuid())
+  dealId        String @unique
+  deal          Deal   @relation(fields: [dealId], references: [id])
+  setByBrokerId String
+  setByBroker   User   @relation(fields: [setByBrokerId], references: [id])
+
+  rate           Float // 0-100 (%), fully custom broker discretion
+  payerType      String
+  splitGrowerPct Float? // only meaningful when payerType == "split"
+
+  amount       Float? // total commission $, computed on product acceptance
+  growerOwes   Float?
+  retailerOwes Float?
+
+  status String    @default("pending")
+  paidAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("commissions")
 }
 
 // One shipment per accepted+invoiced Deal. Created the moment the retailer

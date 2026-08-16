@@ -7,6 +7,7 @@ import { TERMS_LABELS, type Terms } from "@/lib/constants";
 const NAV = [
   { href: "/retailer", label: "Browse inventory" },
   { href: "/retailer/negotiations", label: "My negotiations" },
+  { href: "/retailer/watchlist", label: "Watchlist" },
 ];
 
 export default async function RetailerNegotiationsPage() {

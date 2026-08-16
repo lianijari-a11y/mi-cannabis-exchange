@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Leaf, Droplet } from "lucide-react";
 import { CATEGORY_LABELS, TERMS_LABELS, type Category, type Terms } from "@/lib/constants";
+import { WatchlistButton } from "@/components/retailer/watchlist-button";
 
 export type FeedListing = {
   id: string;
@@ -29,7 +30,13 @@ export function timeRemaining(expiresAt: Date | string | null): string | null {
 // broker listing shows up to retailers in the same clean, consistent card —
 // "presentation is everything," regardless of how rough the seller's raw
 // upload was.
-export function ListingCard({ listing }: { listing: FeedListing }) {
+export function ListingCard({
+  listing,
+  watching = false,
+}: {
+  listing: FeedListing;
+  watching?: boolean;
+}) {
   const cover = listing.media[0];
   const remaining = timeRemaining(listing.expiresAt);
 
@@ -62,6 +69,9 @@ export function ListingCard({ listing }: { listing: FeedListing }) {
         <span className="absolute top-2 right-2 text-[10px] font-medium uppercase tracking-wide bg-green-700/90 text-white px-2 py-1 rounded-full backdrop-blur-sm">
           {TERMS_LABELS[listing.terms as Terms] ?? listing.terms}
         </span>
+        <div className="absolute bottom-2 right-2">
+          <WatchlistButton listingId={listing.id} initialWatching={watching} />
+        </div>
       </div>
 
       <div className="p-4">

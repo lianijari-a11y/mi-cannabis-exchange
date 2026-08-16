@@ -41,9 +41,12 @@ export async function signup(_prevState: SignupState, formData: FormData): Promi
 
   let licenseNumber: string | null = null;
   let licenseType: string | null = null;
+  let licenseExpiry: Date | null = null;
   if (LICENSED_ROLES.includes(role as (typeof LICENSED_ROLES)[number])) {
     licenseNumber = String(formData.get("licenseNumber") ?? "").trim() || null;
     licenseType = String(formData.get("licenseType") ?? "").trim() || null;
+    const licenseExpiryRaw = String(formData.get("licenseExpiry") ?? "").trim();
+    licenseExpiry = licenseExpiryRaw ? new Date(licenseExpiryRaw) : null;
     if (!licenseNumber) {
       return { error: "State license number is required for this account type." };
     }
@@ -76,6 +79,7 @@ export async function signup(_prevState: SignupState, formData: FormData): Promi
       anonHandle,
       licenseNumber,
       licenseType,
+      licenseExpiry,
       licenseVerification: LICENSED_ROLES.includes(role as (typeof LICENSED_ROLES)[number])
         ? "unverified"
         : "approved",

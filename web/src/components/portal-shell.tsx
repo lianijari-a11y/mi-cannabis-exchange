@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Leaf, LogOut } from "lucide-react";
 import { logout } from "@/app/actions";
+import { NotificationBell } from "@/components/notification-bell";
 
 export function PortalShell({
   roleLabel,
@@ -37,6 +38,7 @@ export function PortalShell({
             </nav>
           </div>
           <div className="flex items-center gap-3">
+            <NotificationBell />
             <span className="text-xs text-gray-400 dark:text-gray-500">{roleLabel}</span>
             <form action={logout}>
               <button

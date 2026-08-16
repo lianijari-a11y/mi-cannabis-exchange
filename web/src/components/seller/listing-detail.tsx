@@ -1,6 +1,8 @@
 import { notFound } from "next/navigation";
+import { Eye, FlaskConical } from "lucide-react";
 import { getListingForSeller } from "@/lib/listings";
-import { threadsForListing } from "@/lib/offers";
+import { threadsForListing, recordThreadView } from "@/lib/offers";
+import { splitContractsForListing } from "@/lib/split-contracts";
 import { CATEGORY_LABELS, TERMS_LABELS, type Category, type Terms } from "@/lib/constants";
 import { RespondForm } from "@/components/seller/respond-form";
 import { DealPanelSeller } from "@/components/deal/deal-panel-seller";
@@ -10,16 +12,24 @@ export async function SellerListingDetail({
   sellerId,
   respondAction,
   invoiceAction,
+  splitContractRespondAction,
 }: {
   listingId: string;
   sellerId: string;
   respondAction: (formData: FormData) => void;
   invoiceAction: (formData: FormData) => void;
+  splitContractRespondAction: (formData: FormData) => void;
 }) {
   const listing = await getListingForSeller(listingId, sellerId);
   if (!listing) notFound();
 
   const threads = await threadsForListing(listingId, sellerId);
+  // Seller is looking at every thread on this page right now — log a view
+  // for each so the retailer side can be alerted ("the seller viewed your
+  // offer").
+  await Promise.all(threads.map((t) => recordThreadView(t.id, "seller")));
+
+  const splitContracts = await splitContractsForListing(listingId, sellerId);
 
   return (
     <div className="space-y-6">
@@ -69,17 +79,24 @@ export async function SellerListingDetail({
                 <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
                   {thread.retailer.anonHandle}
                 </span>
-                <span
-                  className={`text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full ${
-                    thread.status === "open"
-                      ? "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400"
-                      : thread.status === "accepted"
-                      ? "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400"
-                      : "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400"
-                  }`}
-                >
-                  {thread.status}
-                </span>
+                <div className="flex items-center gap-2">
+                  {thread.retailerViewCount > 0 && (
+                    <span className="inline-flex items-center gap-1 text-[10px] text-gray-400">
+                      <Eye className="w-3 h-3" /> viewed {thread.retailerViewCount}x
+                    </span>
+                  )}
+                  <span
+                    className={`text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full ${
+                      thread.status === "open"
+                        ? "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400"
+                        : thread.status === "accepted"
+                        ? "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400"
+                        : "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400"
+                    }`}
+                  >
+                    {thread.status}
+                  </span>
+                </div>
               </div>
 
               <ul className="space-y-1 text-xs text-gray-600 dark:text-gray-400">
@@ -119,6 +136,70 @@ export async function SellerListingDetail({
           ))}
         </div>
       </div>
+
+      {splitContracts.length > 0 && (
+        <div>
+          <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-2 flex items-center gap-1.5">
+            <FlaskConical className="w-4 h-4 text-teal-600" /> Toll-processing proposals (
+            {splitContracts.length})
+          </h2>
+          <div className="space-y-3">
+            {splitContracts.map((contract) => (
+              <div
+                key={contract.id}
+                className="bg-white dark:bg-gray-900 border border-teal-200 dark:border-teal-900 rounded-xl p-4"
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                    {contract.processor.anonHandle} — {contract.outputProduct}
+                  </span>
+                  <span className="text-xs font-mono bg-teal-100 dark:bg-teal-900/40 text-teal-700 dark:text-teal-400 px-2 py-0.5 rounded-full">
+                    {contract.splitGrowerPct}/{100 - contract.splitGrowerPct} split
+                  </span>
+                </div>
+                {contract.note && (
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">{contract.note}</p>
+                )}
+                <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
+                  Status: {contract.status}
+                </p>
+                {contract.status === "proposed" && (
+                  <div className="flex gap-2">
+                    <form action={splitContractRespondAction}>
+                      <input type="hidden" name="contractId" value={contract.id} />
+                      <input type="hidden" name="listingId" value={listing.id} />
+                      <input type="hidden" name="decision" value="accepted" />
+                      <button
+                        type="submit"
+                        className="bg-teal-700 text-white rounded-lg px-3 py-1.5 text-xs font-medium"
+                      >
+                        Accept
+                      </button>
+                    </form>
+                    <form action={splitContractRespondAction}>
+                      <input type="hidden" name="contractId" value={contract.id} />
+                      <input type="hidden" name="listingId" value={listing.id} />
+                      <input type="hidden" name="decision" value="rejected" />
+                      <button
+                        type="submit"
+                        className="border border-red-300 dark:border-red-800 text-red-600 rounded-lg px-3 py-1.5 text-xs font-medium"
+                      >
+                        Reject
+                      </button>
+                    </form>
+                  </div>
+                )}
+                {contract.status === "settled" && (
+                  <p className="text-xs text-teal-700 dark:text-teal-400 font-medium">
+                    Settled at ${contract.settlementValue} — you receive $
+                    {contract.settlementGrowerAmount}
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

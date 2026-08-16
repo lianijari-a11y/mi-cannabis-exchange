@@ -2,11 +2,14 @@ import { requireRole } from "@/lib/dal";
 import { PortalShell } from "@/components/portal-shell";
 import { activeListingsFeed } from "@/lib/listings";
 import { ListingCard } from "@/components/retailer/listing-card";
+import { MarketPulse } from "@/components/market-pulse";
+import { watchlistedIdsFor } from "@/lib/watchlist";
 import { CATEGORIES, CATEGORY_LABELS } from "@/lib/constants";
 
 const NAV = [
   { href: "/retailer", label: "Browse inventory" },
   { href: "/retailer/negotiations", label: "My negotiations" },
+  { href: "/retailer/watchlist", label: "Watchlist" },
 ];
 
 const SORTS = {
@@ -21,9 +24,10 @@ export default async function RetailerPage({
 }: {
   searchParams: Promise<{ category?: string; sort?: string }>;
 }) {
-  await requireRole("retailer");
+  const session = await requireRole("retailer");
   const { category, sort } = await searchParams;
   let listings = await activeListingsFeed();
+  const watchlistIds = await watchlistedIdsFor(session.user.id);
 
   if (category && CATEGORIES.includes(category as (typeof CATEGORIES)[number])) {
     listings = listings.filter((l) => l.category === category);
@@ -89,6 +93,8 @@ export default async function RetailerPage({
         </form>
       </div>
 
+      <MarketPulse />
+
       {listings.length === 0 && (
         <p className="mt-6 text-sm text-gray-500 dark:text-gray-400">
           No listings match right now — check back soon.
@@ -97,7 +103,7 @@ export default async function RetailerPage({
 
       <div className="mt-6 grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {listings.map((listing) => (
-          <ListingCard key={listing.id} listing={listing} />
+          <ListingCard key={listing.id} listing={listing} watching={watchlistIds.has(listing.id)} />
         ))}
       </div>
     </PortalShell>

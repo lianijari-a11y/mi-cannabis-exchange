@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { listingsForSeller } from "@/lib/listings";
+import { MarketPulse } from "@/components/market-pulse";
 import { CATEGORY_LABELS, TERMS_LABELS, type Category, type Terms } from "@/lib/constants";
 
 export async function SellerDashboard({
@@ -22,6 +23,8 @@ export async function SellerDashboard({
           Post inventory
         </Link>
       </div>
+
+      <MarketPulse />
 
       {listings.length === 0 && (
         <p className="text-sm text-gray-500 dark:text-gray-400">

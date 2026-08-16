@@ -1,7 +1,7 @@
 import { requireRole } from "@/lib/dal";
 import { PortalShell } from "@/components/portal-shell";
 import { SellerListingDetail } from "@/components/seller/listing-detail";
-import { respond, uploadInvoice } from "./actions";
+import { respond, uploadInvoice, splitContractRespond } from "./actions";
 
 const NAV = [
   { href: "/grower", label: "My listings" },
@@ -23,6 +23,7 @@ export default async function GrowerListingDetailPage({
         sellerId={session.user.id}
         respondAction={respond}
         invoiceAction={uploadInvoice}
+        splitContractRespondAction={splitContractRespond}
       />
     </PortalShell>
   );
