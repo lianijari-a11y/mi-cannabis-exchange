@@ -9,6 +9,7 @@ const NAV = [
   { href: "/sales", label: "My activity" },
   { href: "/sales/listings/new", label: "Post for a seller" },
   { href: "/sales/earnings", label: "My earnings" },
+  { href: "/sales/marketing", label: "Marketing suite" },
 ];
 
 export default async function NewSalesRepListingPage({

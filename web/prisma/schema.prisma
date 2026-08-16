@@ -798,3 +798,84 @@ model LicenseRegistry {
   @@index([businessName])
   @@map("license_registry")
 }
+
+// ---------- Sales lead CRM (added 2026-08-16) ----------
+// Real backing store for the sales team's cold-calling tool (previously a
+// standalone HTML artifact using an ephemeral, artifact-scoped
+// window.storage key-value API — not a durable multi-user database, and
+// not reachable from this app). This is Phase 1 (core CRM: list, search,
+// filter, disposition tracking, call logging, notes, CSV export) — the
+// Power Dialer / callback calendar / dashboard UI from the source artifact
+// are deliberately not ported yet, per the human's explicit phasing choice.
+//
+// Visibility: every sales_rep and admin sees every lead across every list
+// — the human explicitly chose this over per-rep visibility silos (the
+// source artifact's SHARED flag varied by list; this app doesn't replicate
+// that split). assignedRepName is preserved as free text from the
+// imported data (the original tool had no real user accounts backing rep
+// names) rather than forced into a User foreign key.
+model Lead {
+  id String @id @default(cuid())
+
+  // Which of the 4 imported lists this record came from — mirrors the
+  // source artifact's workspace tabs. "taino" | "leads" | "mi_processors" | "mi_dispensaries"
+  listKey String
+
+  // The source artifact's per-list primary dimension (e.g. license status
+  // for the MI lists, "Contacts" source tag for Taino) — kept as free text
+  // since its meaning and allowed values differ per list.
+  primaryStatus String @default("")
+
+  company    String
+  contact    String?
+  phone      String?
+  altPhone   String?
+  email      String?
+  website    String?
+
+  address String?
+  city    String?
+  state   String?
+  zip     String?
+
+  license       String?
+  licenseType   String?
+  licenseStatus String?
+  serviceZone   String?
+
+  notes String?
+
+  assignedRepName String? // free text, preserved from imported data — see model comment
+
+  // disposition: NEW | NO_PHONE | NO_ANSWER | BUSY | CALLBACK | EMAIL_SENT | SALE | DISCONNECTED | DECLINED | DNC
+  disposition  String    @default("NEW")
+  saleAmount   Float?
+  callbackDate DateTime?
+
+  calledCount Int       @default(0)
+  lastCallAt  DateTime?
+
+  deleted Boolean @default(false) // soft-delete, matches the source tool's "remove/restore" pattern
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  activity LeadActivityLog[]
+
+  @@index([listKey])
+  @@index([disposition])
+  @@map("leads")
+}
+
+model LeadActivityLog {
+  id       String @id @default(cuid())
+  leadId   String
+  lead     Lead   @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  authorId String? // sales_rep or admin User who logged this — nullable since imported history has no real author
+
+  text      String
+  createdAt DateTime @default(now())
+
+  @@index([leadId])
+  @@map("lead_activity_logs")
+}

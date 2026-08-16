@@ -11,6 +11,7 @@ const NAV = [
   { href: "/admin/sales-reps", label: "Sales rep earnings" },
   { href: "/admin/data-uploads", label: "Data uploads" },
   { href: "/admin/metrc", label: "METRC" },
+  { href: "/admin/marketing", label: "Marketing suite" },
 ];
 
 export default async function AdminMetrcPage() {
