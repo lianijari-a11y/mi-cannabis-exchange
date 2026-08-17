@@ -10,7 +10,17 @@ import { ROLES, LICENSED_ROLES, ADDRESS_ROLES, roleHome, type Role } from "@/lib
 
 export type SignupState = { error?: string } | undefined;
 
-const SIGNUP_ROLES: Role[] = ["grower", "processor", "retailer", "broker", "transporter", "sales_rep"];
+// Broker and Sales Rep are deliberately excluded from public self-signup —
+// both get instant, zero-review, platform-wide visibility (every real
+// negotiation for Broker; the whole lead CRM for Sales Rep), which a
+// security review flagged as exactly the kind of access CLAUDE.md already
+// describes as "the marketplace operator's own staff," not something a
+// stranger should self-serve into. Admin creates those two account types
+// directly now — see lib/admin.ts's createStaffAccount and
+// /admin/staff/new. This check is enforced here server-side (not just by
+// removing the option from signup-form.tsx's dropdown) since a client-only
+// restriction is trivial to bypass by posting the form directly.
+const SIGNUP_ROLES: Role[] = ["grower", "processor", "retailer", "transporter"];
 
 export async function signup(_prevState: SignupState, formData: FormData): Promise<SignupState> {
   const roleRaw = String(formData.get("role") ?? "");

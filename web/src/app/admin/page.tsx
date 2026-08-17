@@ -10,14 +10,20 @@ const NAV = [
   { href: "/admin", label: "Overview" },
   { href: "/admin/listings", label: "All listings" },
   { href: "/admin/listings/new", label: "Post for a seller" },
+  { href: "/admin/staff/new", label: "Add staff account" },
   { href: "/admin/sales-reps", label: "Sales rep earnings" },
   { href: "/admin/data-uploads", label: "Data uploads" },
   { href: "/admin/metrc", label: "METRC" },
   { href: "/admin/marketing", label: "Marketing suite" },
 ];
 
-export default async function AdminPage() {
+export default async function AdminPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ staffCreated?: string }>;
+}) {
   await requireRole("admin");
+  const { staffCreated } = await searchParams;
   const [pending, users, expiring] = await Promise.all([
     pendingLicenseUsers(),
     allUsers(),
@@ -40,6 +46,11 @@ export default async function AdminPage() {
 
   return (
     <PortalShell roleLabel="Admin" navItems={NAV}>
+      {staffCreated && (
+        <p className="text-xs text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-900 rounded-lg p-2 mb-4">
+          Staff account created — it'll show up in the user list below.
+        </p>
+      )}
       <StateMarketWidget />
       <div className="space-y-8">
         {expiring.length > 0 && (

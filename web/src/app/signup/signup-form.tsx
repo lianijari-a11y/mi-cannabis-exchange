@@ -3,13 +3,13 @@
 import { useActionState, useState } from "react";
 import { signup } from "./actions";
 
+// Broker and Sales Rep are intentionally not offered here — see the
+// matching comment on SIGNUP_ROLES in ./actions.ts.
 const ROLE_OPTIONS = [
   { value: "grower", label: "Grower" },
   { value: "processor", label: "Processor" },
   { value: "retailer", label: "Retailer" },
-  { value: "broker", label: "Broker" },
   { value: "transporter", label: "Transporter" },
-  { value: "sales_rep", label: "Sales Rep" },
 ] as const;
 
 const LICENSED_ROLES = new Set(["grower", "processor", "retailer", "transporter"]);

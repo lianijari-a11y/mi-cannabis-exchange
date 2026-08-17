@@ -1,5 +1,49 @@
 import "server-only";
+import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
+import { generateAnonHandle } from "@/lib/anon-handle";
+
+// Added 2026-08-17 — Broker and Sales Rep were removed from public signup
+// (see CLAUDE.md and signup/actions.ts's SIGNUP_ROLES) after a security
+// review flagged that both roles get instant, zero-review, platform-wide
+// visibility (every real negotiation for Broker; the entire lead CRM for
+// Sales Rep) — exactly the kind of access this app documents as "the
+// marketplace operator's own staff," not something a stranger should be
+// able to self-serve into. This is the replacement path: only an Admin can
+// create one of these two accounts.
+export async function createStaffAccount(params: {
+  role: "broker" | "sales_rep";
+  fullName: string;
+  businessName?: string | null;
+  email: string;
+  password: string;
+  phone?: string | null;
+}) {
+  const email = params.email.trim().toLowerCase();
+  const existing = await prisma.user.findUnique({ where: { email } });
+  if (existing) throw new Error("An account with that email already exists.");
+  if (params.password.length < 8) throw new Error("Password must be at least 8 characters.");
+
+  const passwordHash = await bcrypt.hash(params.password, 10);
+  const anonHandle = await generateAnonHandle(params.role);
+
+  return prisma.user.create({
+    data: {
+      role: params.role,
+      email,
+      fullName: params.fullName.trim(),
+      businessName: params.businessName?.trim() || null,
+      passwordHash,
+      anonHandle,
+      // Neither role is in LICENSED_ROLES, so there's no license to review —
+      // same "approved" default the self-serve signup path already used for
+      // these two roles, just now gated behind Admin creating the account
+      // in the first place instead of anyone reaching it directly.
+      licenseVerification: "approved",
+      phone: params.phone?.trim() || null,
+    },
+  });
+}
 
 export async function pendingLicenseUsers() {
   return prisma.user.findMany({
