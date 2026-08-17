@@ -20,6 +20,22 @@ export const metadata: Metadata = {
   },
   description:
     "A blind wholesale marketplace connecting Michigan-licensed Growers, Processors, and Retailers, brokered by a neutral intermediary.",
+  // manifest.ts covers Android/desktop install; iOS Safari still needs these
+  // explicit tags to offer "Add to Home Screen" with the right icon/name and
+  // to launch standalone (no browser chrome) instead of opening Safari.
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "MI Cannabis Exchange",
+  },
+  icons: {
+    icon: [{ url: "/favicon-32.png", sizes: "32x32", type: "image/png" }],
+    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
+  },
+};
+
+export const viewport = {
+  themeColor: "#15803d",
 };
 
 export default function RootLayout({
