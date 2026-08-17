@@ -140,6 +140,55 @@ const EXPIRY_WARNING_DAYS = 90;
 // Licensed users (grower/processor/retailer/transporter) whose license
 // expires within the warning window, or has already expired. Sorted
 // soonest-first so the most urgent renewals surface at the top.
+// Admin-wide operational snapshot (POS hardening plan, Phase 5) — covers
+// every retailer/location at once, built entirely from data already being
+// captured elsewhere in the app (no new logging infrastructure). Recent
+// METRC submission outcomes already have their own dedicated view at
+// /admin/metrc (lib/metrc-integration.ts's recentSaleMetrcOutcomes), not
+// duplicated here.
+//
+// Rate-limit info is a live snapshot, not a history — RateLimitBucket
+// (lib/rate-limit.ts) only tracks the CURRENT window's count per key, not
+// a log of past rejection events, so "currently rate-limited" is the
+// honest thing to show rather than fabricating a timeline that isn't
+// actually captured anywhere.
+const RATE_LIMIT_SCOPES: { scope: string; label: string; maxRequests: number }[] = [
+  { scope: "license-lookup", label: "License lookup (signup autofill)", maxRequests: 20 },
+  { scope: "storefront-order", label: "Storefront order placement", maxRequests: 10 },
+];
+
+export async function systemHealthSnapshot() {
+  const [voidedSales, buckets] = await Promise.all([
+    prisma.sale.findMany({
+      where: { status: "voided" },
+      select: {
+        id: true,
+        saleNumber: true,
+        total: true,
+        createdAt: true,
+        retailer: { select: { businessName: true, fullName: true } },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 25,
+    }),
+    prisma.rateLimitBucket.findMany({
+      where: { windowStart: { gte: new Date(Date.now() - 60_000) } },
+    }),
+  ]);
+
+  const currentlyRateLimited = buckets
+    .map((b) => {
+      const [scope, ...rest] = b.key.split(":");
+      const config = RATE_LIMIT_SCOPES.find((s) => s.scope === scope);
+      if (!config || b.count <= config.maxRequests) return null;
+      return { scope: config.label, identifier: rest.join(":"), count: b.count, limit: config.maxRequests };
+    })
+    .filter((x): x is NonNullable<typeof x> => x !== null)
+    .sort((a, b) => b.count - a.count);
+
+  return { voidedSales, currentlyRateLimited };
+}
+
 export async function licenseExpiryAlerts() {
   const cutoff = new Date(Date.now() + EXPIRY_WARNING_DAYS * 24 * 60 * 60 * 1000);
   const users = await prisma.user.findMany({

@@ -7,9 +7,10 @@ const NAV = [
   { href: "/admin/listings", label: "All listings" },
   { href: "/admin/listings/new", label: "Post for a seller" },
   { href: "/admin/staff/new", label: "Add staff account" },
-  { href: "/admin/sales-reps", label: "Sales rep earnings" },
+  { href: "/admin/sales-reps", label: "Account Executive earnings" },
   { href: "/admin/data-uploads", label: "Data uploads" },
   { href: "/admin/metrc", label: "METRC" },
+  { href: "/admin/system-health", label: "System health" },
   { href: "/admin/marketing", label: "Marketing suite" },
 ];
 
@@ -27,7 +28,7 @@ export default async function NewStaffAccountPage({
         Add a staff account
       </h1>
       <p className="text-xs text-gray-500 dark:text-gray-400 mb-4 max-w-md">
-        Broker and Sales Rep accounts see every real negotiation and the whole lead CRM the
+        Broker and Account Executive accounts see every real negotiation and the whole lead CRM the
         moment they log in — no license review, because there&apos;s no license to check. That
         level of access is only handed out here, by an Admin, not through public signup.
       </p>
@@ -51,7 +52,7 @@ export default async function NewStaffAccountPage({
             className="w-full border border-gray-300 dark:border-gray-700 rounded-lg px-3 py-2 text-sm mt-1 bg-transparent"
           >
             <option value="broker">Broker</option>
-            <option value="sales_rep">Sales Rep</option>
+            <option value="sales_rep">Account Executive</option>
           </select>
         </div>
 

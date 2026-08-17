@@ -22,7 +22,7 @@ export default async function NonCircumventPage() {
             <Leaf className="w-3.5 h-3.5 text-white" />
           </div>
           <span className="font-semibold text-sm text-gray-900 dark:text-gray-100">
-            MI Cannabis Exchange
+            Cannabliz
           </span>
         </div>
 

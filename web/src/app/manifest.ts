@@ -10,8 +10,8 @@ import type { MetadataRoute } from "next";
 // stay live rather than served from a stale cache).
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "MI Cannabis Exchange — Wholesale Marketplace",
-    short_name: "MI Cannabis Exchange",
+    name: "Cannabliz — Wholesale Marketplace",
+    short_name: "Cannabliz",
     description:
       "A blind wholesale marketplace connecting Michigan-licensed Growers, Processors, and Retailers, brokered by a neutral intermediary.",
     start_url: "/",

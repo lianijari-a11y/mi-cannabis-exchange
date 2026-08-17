@@ -18,7 +18,7 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
             <Leaf className="w-3.5 h-3.5 text-white" />
           </div>
           <span className="font-semibold text-sm text-gray-900 dark:text-gray-100">
-            MI Cannabis Exchange
+            Cannabliz
           </span>
         </div>
 
@@ -83,7 +83,7 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
         </div>
 
         <p className="mt-6 text-[10px] text-gray-400 leading-relaxed">
-          This is an operational record inside MI Cannabis Exchange, not a substitute for the
+          This is an operational record inside Cannabliz, not a substitute for the
           METRC seed-to-sale manifest a licensed transfer requires.
         </p>
       </div>

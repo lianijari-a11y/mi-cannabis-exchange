@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { Leaf } from "lucide-react";
 
 const NAV_LINKS = [
   { href: "#how-it-works", label: "How it works" },
@@ -12,11 +11,10 @@ export function SiteHeader() {
     <header className="sticky top-0 z-40 border-b border-gray-200 dark:border-gray-800 bg-white/80 dark:bg-gray-950/80 backdrop-blur supports-[backdrop-filter]:bg-white/60 dark:supports-[backdrop-filter]:bg-gray-950/60">
       <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between gap-3">
         <Link href="/" className="flex items-center gap-2 shrink-0">
-          <div className="w-8 h-8 bg-green-700 rounded-lg flex items-center justify-center shrink-0">
-            <Leaf className="w-4 h-4 text-white" />
-          </div>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logos/cannabliz-icon.png" alt="Cannabliz" className="w-8 h-8 rounded-lg object-cover shrink-0" />
           <span className="font-semibold text-sm sm:text-base text-gray-900 dark:text-gray-100 whitespace-nowrap">
-            MI Cannabis Exchange
+            Cannabliz
           </span>
         </Link>
 

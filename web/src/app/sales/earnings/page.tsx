@@ -29,7 +29,7 @@ export default async function SalesRepEarningsPage() {
   );
 
   return (
-    <PortalShell roleLabel="Sales Rep" navItems={NAV}>
+    <PortalShell roleLabel="Account Executive" navItems={NAV}>
       <h1 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">My earnings</h1>
       <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
         Deals closed from listings you posted. Commission is set by Admin as a standing rate on

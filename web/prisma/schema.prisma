@@ -61,6 +61,19 @@ model User {
   // role = sales_rep. Null/0 means no commission is computed.
   salesRepCommissionRate Float?
 
+  // Retailer POS (CLAUDE.md §23) — prefills the markup field when converting
+  // an accepted Deal into inventory (lib/pos.ts's createInventoryLotFromDeal),
+  // still editable per lot. Only meaningful for role = retailer.
+  defaultMarkupPercent Float?
+
+  // Public order-ahead storefront (CLAUDE.md §25) — retailer-set, URL-safe
+  // slug used in /order/<slug>. Deliberately NOT derived from or related to
+  // anonHandle: anonHandle exists to hide identity across the wholesale
+  // blind-marketplace boundary; this is the opposite — a retailer's own
+  // real business identity, meant to be shared publicly. Only meaningful
+  // for role = retailer.
+  storefrontSlug String? @unique
+
   // Stable anonymous handle shown to the counterparty across the blind
   // marketplace boundary, e.g. "Grower #A17". Generated once at signup,
   // never derived from the real name so it can't leak identity. Transporters
@@ -92,6 +105,12 @@ model User {
   productRequestResponsesSent ProductRequestResponse[] @relation("ProductRequestResponseSupplier")
   salesRepCommissionsEarned  SalesRepCommission[]
   metrcConnection            MetrcConnection?
+  inventoryLots              InventoryLot[]
+  sales                      Sale[]
+  saleCounter                SaleCounter?
+  ordersReceived             Order[]
+  smsConnection              SmsConnection?
+  marketingMessages          MarketingMessage[]
 
   @@map("users")
 }
@@ -469,6 +488,7 @@ model Deal {
   commission Commission?
   rejection  ProductRejection?
   salesRepCommission SalesRepCommission?
+  inventoryLot       InventoryLot?
 
   @@map("deals")
 }
@@ -717,9 +737,276 @@ model MetrcConnection {
 model MetrcVendorConfig {
   id           String   @id @default("singleton")
   vendorApiKey String?
-  updatedAt    DateTime @updatedAt
+
+  // Added for the Retailer POS module (CLAUDE.md §23) — this app's first
+  // real METRC API call. Defaults to true so the very first live call any
+  // retailer's connection ever makes goes to METRC's sandbox, not
+  // production, until Admin has verified it end-to-end.
+  useSandbox Boolean @default(true)
+
+  updatedAt DateTime @updatedAt
 
   @@map("metrc_vendor_config")
+}
+
+// ---------- Retailer Point of Sale (added 2026-08-16, third ask) ----------
+// A native retail checkout for the Retailer role — separate from everything
+// above, which is all wholesale (Grower/Processor/Broker -> Retailer). Once
+// a wholesale Deal is delivered and accepted, nothing in this app previously
+// tracked "how much of it is still on the shelf" or let the retailer ring up
+// a sale to an actual consumer; these three models are new for that, not a
+// variant of Deal/Shipment. See CLAUDE.md §23 for the full picture, in
+// particular: this is the first feature where METRC gets a *live* API call
+// (submitSaleToMetrc in lib/metrc-integration.ts) rather than pure
+// credential scaffolding — a deliberate, confirmed exception to the
+// "METRC is scaffolding-only" posture above, made specifically for POS at
+// the human's explicit instruction, not a silent reversal of it elsewhere.
+
+// One row per intake batch: a retailer converts an accepted Deal into
+// sellable stock here, once, via lib/pos.ts's createInventoryLotFromDeal.
+// quantityRemaining is the only thing sales ever decrement — Deal.finalQuantity
+// itself is never touched, staying exactly what it always was (a one-time
+// negotiated wholesale total).
+// status: "active" | "depleted" | "voided"
+model InventoryLot {
+  id         String  @id @default(cuid())
+  retailerId String
+  retailer   User    @relation(fields: [retailerId], references: [id])
+  dealId     String? @unique
+  deal       Deal?   @relation(fields: [dealId], references: [id])
+
+  // Auto-generated, unique, Code128-renderable — this is what a barcode
+  // scanner reads at the register (lib/pos.ts's lookupLotBySku). Not a
+  // manufacturer UPC — raw/wholesale cannabis product doesn't come with
+  // one, so this app mints its own internal label per lot, same as real
+  // dispensary POS systems do.
+  sku String @unique
+
+  // The real METRC package tag this lot's product is tracked under.
+  // Optional because this app has no other way to learn it — Growers/
+  // Processors don't record METRC tags anywhere upstream (Listing/Deal).
+  // Retailer must key it in by hand for submitSaleToMetrc to actually
+  // attempt a live call; left blank, sales against this lot are recorded
+  // in-app but explicitly marked "skipped, no tag" rather than faked.
+  metrcPackageTag String?
+
+  productName String
+  category    String
+  thcPercent  Float?
+  unit        String
+
+  // Set at intake for unit-counted products (edibles, pre-rolls) whose
+  // potency is labeled in mg per piece rather than a % of mass — thcPercent
+  // above covers weight-based flower/concentrate, this covers the other
+  // case. Both are optional; the register's THC-equivalency calculator
+  // (CLAUDE.md §24) uses whichever applies and shows nothing rather than a
+  // fabricated number when neither does (e.g. liquid concentrate by volume).
+  thcMgPerUnit Float?
+
+  quantityReceived  Float
+  quantityRemaining Float
+
+  // unitCost derived once from the accepted Deal (finalPrice / finalQuantity)
+  // at intake. markupPercent is the retailer's own call, per lot — the
+  // human's own framing was "some 50%, others a different %" — and stays
+  // editable after intake (lib/pos.ts's updateLotMarkup). retailPricePerUnit
+  // is recomputed from these two any time either changes, never hand-edited
+  // directly, so it can never drift from unitCost * (1 + markupPercent/100).
+  unitCost           Float
+  markupPercent      Float
+  retailPricePerUnit Float
+
+  status String @default("active")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  lineItems      SaleLineItem[]
+  orderLineItems OrderLineItem[]
+
+  @@index([retailerId, status])
+  @@map("inventory_lots")
+}
+
+// One consumer-facing retail sale. saleNumber is a simple per-retailer
+// sequence (display/receipt purposes only, not a security boundary).
+// taxRatePercent is stamped onto the sale at checkout time rather than
+// computed from a live rate lookup — see CLAUDE.md §23's tax caveat, this
+// is explicitly not a certified tax engine.
+// tenderType: "cash" | "card" | "other"
+// status: "completed" | "voided"
+// metrcStatus: "not_submitted" | "skipped_no_tag" | "submitted" | "failed"
+model Sale {
+  id         String @id @default(cuid())
+  retailerId String
+  retailer   User   @relation(fields: [retailerId], references: [id])
+  saleNumber Int
+
+  subtotal       Float
+  taxRatePercent Float
+  taxAmount      Float
+  total          Float
+  tenderType     String
+
+  // Added for the checkout-flexibility quick win (CLAUDE.md §24) — not a
+  // customer-accounts/loyalty system, just what the register captures at
+  // the moment of sale. orderType: "in_store" | "pickup" | "curbside".
+  // customerName is free text, receipt-only, never used to look up or
+  // re-identify a past sale.
+  orderType    String  @default("in_store")
+  customerName String?
+
+  status String @default("completed")
+
+  // See lib/metrc-integration.ts's submitSaleToMetrc — best-effort, never
+  // blocks the sale itself (same try/catch-and-log posture as the existing
+  // pushDealToPosIfConnected in lib/pos-integration.ts). metrcError only
+  // ever holds this app's own record of what METRC said back; it is not
+  // itself the compliance record — see CLAUDE.md §2/§23.
+  metrcStatus String  @default("not_submitted")
+  metrcError  String?
+
+  createdAt DateTime @default(now())
+
+  lineItems SaleLineItem[]
+  order     Order?
+
+  @@unique([retailerId, saleNumber])
+  @@index([retailerId, status])
+  @@map("sales")
+}
+
+// One row per retailer, atomically incremented inside createSale's own
+// transaction (upsert + increment) to hand out the next saleNumber. Replaces
+// a SELECT MAX(saleNumber)+1 pattern that raced under concurrent checkouts
+// at the same retailer — Postgres's row-level lock on the UPDATE serializes
+// concurrent terminals correctly instead of throwing on the @@unique above.
+// Scoped per retailer, so contention never crosses store locations.
+model SaleCounter {
+  retailerId String @id
+  retailer   User   @relation(fields: [retailerId], references: [id])
+  value      Int    @default(0)
+
+  @@map("sale_counters")
+}
+
+// ---------- Customer order-ahead / pickup (added 2026-08-17) ----------
+// A customer-placed pre-order — deliberately NOT a Sale. createSale
+// decrements real, METRC-tracked inventory the instant it runs; a stranger
+// submitting a public web form is not the same event as product actually
+// leaving the shelf. This is the "placed but not yet fulfilled" record —
+// lib/pos.ts's fulfillOrder converts it into a real Sale (reusing createSale
+// itself) only once the retailer hands the product over in person and picks
+// a tender type. See CLAUDE.md §25.
+//
+// Guest-only by design: customerName/customerPhone are free text, same
+// "not an account, never used to re-identify a past order" posture as
+// Sale.customerName (§24) — there is no Customer/User row backing this.
+// ageAttested is a checkbox, not real ID verification — that still happens
+// in person at pickup, same as any walk-in purchase.
+// status: "placed" | "ready" | "picked_up" | "canceled"
+model Order {
+  id         String @id @default(cuid())
+  retailerId String
+  retailer   User   @relation(fields: [retailerId], references: [id])
+
+  customerName  String
+  customerPhone String
+  ageAttested   Boolean @default(false)
+
+  // Real consent capture for lib/marketing-sms.ts (CLAUDE.md §29) — a
+  // separate, optional, unchecked-by-default checkbox at checkout, distinct
+  // from ageAttested (which is required and not consent-related at all).
+  // This is what actually distinguishes "we have this phone number because
+  // you placed a pickup order" from "you agreed to receive marketing texts"
+  // — the two were flagged in §28 as conflated; this field is the fix.
+  marketingOptIn Boolean @default(false)
+
+  // Free-text pickup preference ("today after 3pm") — not a real scheduling
+  // system, same spirit as Shipment's simple date fields elsewhere.
+  requestedPickupNote String?
+
+  status String @default("placed")
+
+  saleId String? @unique
+  sale   Sale?   @relation(fields: [saleId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  lineItems OrderLineItem[]
+
+  @@index([retailerId, status])
+  @@map("orders")
+}
+
+model OrderLineItem {
+  id             String       @id @default(cuid())
+  orderId        String
+  order          Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  inventoryLotId String
+  inventoryLot   InventoryLot @relation(fields: [inventoryLotId], references: [id])
+
+  quantity          Float
+  unitPriceSnapshot Float // retailPricePerUnit at the moment the order was placed
+  lineTotal         Float
+
+  @@index([orderId])
+  @@map("order_line_items")
+}
+
+// ---------- Retailer SMS marketing scaffolding (added 2026-08-17) ----------
+// SCAFFOLDING ONLY, same posture as PosConnection/MetrcConnection —
+// see lib/marketing-sms.ts. Storing a retailer's own Twilio credentials
+// does NOT mean live sends happen: sendSpecialsMessage never makes a real
+// Twilio API call, regardless of whether credentials are on file, until the
+// human explicitly asks for that (same "flag, don't build past it" posture
+// as METRC in §2/§19 — this feature is more legally sensitive, not less,
+// since unsolicited-adjacent marketing SMS is TCPA-regulated). Retailer-
+// owned (not a platform-wide vendor key like MetrcVendorConfig) — each
+// dispensary sends its own specials to its own customers. See CLAUDE.md §29.
+model SmsConnection {
+  id              String   @id @default(cuid())
+  retailerId      String   @unique
+  retailer        User     @relation(fields: [retailerId], references: [id], onDelete: Cascade)
+  accountSid      String
+  authToken       String // encrypted at rest via lib/crypto.ts, same as MetrcConnection
+  fromPhoneNumber String
+  connectedAt     DateTime @default(now())
+
+  @@map("sms_connections")
+}
+
+// One row per compose-and-send attempt — status is "stub_only" until a real
+// Twilio integration exists, matching PosSyncLog's honesty convention: an
+// entry here is proof something was *attempted*, never proof a text
+// actually reached anyone.
+model MarketingMessage {
+  id             String   @id @default(cuid())
+  retailerId     String
+  retailer       User     @relation(fields: [retailerId], references: [id])
+  body           String
+  recipientCount Int
+  status         String // "stub_only" | "failed" — never "sent" until real
+  message        String
+  createdAt      DateTime @default(now())
+
+  @@map("marketing_messages")
+}
+
+model SaleLineItem {
+  id             String       @id @default(cuid())
+  saleId         String
+  sale           Sale         @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  inventoryLotId String
+  inventoryLot   InventoryLot @relation(fields: [inventoryLotId], references: [id])
+
+  quantity  Float
+  unitPrice Float // snapshot of retailPricePerUnit at time of sale
+  lineTotal Float
+
+  @@index([saleId])
+  @@map("sale_line_items")
 }
 
 // ---------- Statewide monthly market report (added 2026-08-16) ----------
@@ -891,4 +1178,20 @@ model LeadActivityLog {
 
   @@index([leadId])
   @@map("lead_activity_logs")
+}
+
+// Postgres-backed replacement for the in-memory per-IP sliding-window
+// limiters that used to live directly in /api/license-lookup and the
+// storefront order action (both flagged in CLAUDE.md §21 as not holding
+// across more than one serverless instance). Not tied to a User — this
+// exists specifically for the app's genuinely unauthenticated write
+// surfaces, keyed by an arbitrary "scope:identifier" string (e.g.
+// "license-lookup:203.0.113.5"). See lib/rate-limit.ts for the atomic
+// fixed-window upsert that reads/writes this table in one statement.
+model RateLimitBucket {
+  key         String   @id
+  windowStart DateTime
+  count       Int      @default(0)
+
+  @@map("rate_limit_buckets")
 }

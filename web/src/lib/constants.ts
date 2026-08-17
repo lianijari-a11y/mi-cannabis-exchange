@@ -75,7 +75,7 @@ export const ROLE_LABELS: Record<Role, string> = {
   retailer: "Retailer",
   broker: "Broker",
   transporter: "Transporter",
-  sales_rep: "Sales Rep",
+  sales_rep: "Account Executive",
   admin: "Admin",
 };
 

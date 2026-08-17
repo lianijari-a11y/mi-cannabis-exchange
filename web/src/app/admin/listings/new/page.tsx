@@ -10,9 +10,10 @@ const NAV = [
   { href: "/admin/listings", label: "All listings" },
   { href: "/admin/listings/new", label: "Post for a seller" },
   { href: "/admin/staff/new", label: "Add staff account" },
-  { href: "/admin/sales-reps", label: "Sales rep earnings" },
+  { href: "/admin/sales-reps", label: "Account Executive earnings" },
   { href: "/admin/data-uploads", label: "Data uploads" },
   { href: "/admin/metrc", label: "METRC" },
+  { href: "/admin/system-health", label: "System health" },
   { href: "/admin/marketing", label: "Marketing suite" },
 ];
 
@@ -30,7 +31,7 @@ export default async function NewAdminListingPage({
         Post inventory for a seller
       </h1>
       <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
-        Same tool the Sales Rep role uses — posts under the chosen grower/processor's own
+        Same tool the Account Executive role uses — posts under the chosen grower/processor's own
         identity.
       </p>
       <ListingForm

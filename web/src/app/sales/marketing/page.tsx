@@ -31,7 +31,7 @@ export default async function SalesMarketingPage({
   const [leads, counts] = await Promise.all([leadsForList(listKey), leadCountsByList()]);
 
   return (
-    <PortalShell roleLabel="Sales Rep" navItems={NAV}>
+    <PortalShell roleLabel="Account Executive" navItems={NAV}>
       <h1 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">Marketing suite</h1>
       <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
         Cold-calling lead lists for soliciting inventory from growers/processors — core CRM only

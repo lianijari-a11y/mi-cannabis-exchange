@@ -11,7 +11,7 @@ export const NON_CIRCUMVENT_VERSION = "2026-08-16-draft-v1";
 // CLAUDE.md §9): the mechanism (gate + recorded acceptance) is real, the
 // clause language is a stand-in that must be replaced before real launch.
 export const NON_CIRCUMVENT_TEXT = `
-By using MI Cannabis Exchange, you agree not to circumvent the platform:
+By using Cannabliz, you agree not to circumvent the platform:
 you will not use any counterparty identity, contact information, or deal
 information you obtain through this platform to negotiate, transact, or
 otherwise complete a wholesale cannabis transaction directly with that

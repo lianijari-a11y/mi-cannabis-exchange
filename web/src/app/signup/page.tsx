@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { Leaf } from "lucide-react";
 import { SignupForm } from "./signup-form";
 
 export default function SignupPage() {
@@ -7,11 +6,10 @@ export default function SignupPage() {
     <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950 px-4 py-10">
       <div className="w-full max-w-sm">
         <Link href="/" className="flex items-center justify-center gap-2 mb-6">
-          <div className="w-9 h-9 bg-green-700 rounded-lg flex items-center justify-center">
-            <Leaf className="w-4.5 h-4.5 text-white" />
-          </div>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logos/cannabliz-icon.png" alt="Cannabliz" className="w-9 h-9 rounded-lg object-cover" />
           <span className="font-semibold text-lg text-gray-900 dark:text-gray-100">
-            MI Cannabis Exchange
+            Cannabliz
           </span>
         </Link>
 

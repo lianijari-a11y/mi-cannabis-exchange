@@ -21,7 +21,7 @@ export default async function NewSalesRepListingPage({
   const { error } = await searchParams;
 
   return (
-    <PortalShell roleLabel="Sales Rep" navItems={NAV}>
+    <PortalShell roleLabel="Account Executive" navItems={NAV}>
       <h1 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">
         Post inventory for a seller
       </h1>

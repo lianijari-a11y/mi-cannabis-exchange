@@ -1,6 +1,6 @@
 import { Suspense } from "react";
 import Link from "next/link";
-import { Leaf, ShieldCheck } from "lucide-react";
+import { ShieldCheck } from "lucide-react";
 import { LoginForm } from "./login-form";
 
 export default function LoginPage() {
@@ -8,11 +8,10 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950 px-4">
       <div className="w-full max-w-sm">
         <Link href="/" className="flex items-center justify-center gap-2 mb-6">
-          <div className="w-9 h-9 bg-green-700 rounded-lg flex items-center justify-center">
-            <Leaf className="w-4.5 h-4.5 text-white" />
-          </div>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logos/cannabliz-icon.png" alt="Cannabliz" className="w-9 h-9 rounded-lg object-cover" />
           <span className="font-semibold text-lg text-gray-900 dark:text-gray-100">
-            MI Cannabis Exchange
+            Cannabliz
           </span>
         </Link>
 

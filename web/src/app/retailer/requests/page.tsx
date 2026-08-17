@@ -10,6 +10,7 @@ const NAV = [
   { href: "/retailer/negotiations", label: "My negotiations" },
   { href: "/retailer/watchlist", label: "Watchlist" },
   { href: "/retailer/requests", label: "Wanted board" },
+  { href: "/retailer/pos", label: "Point of sale" },
   { href: "/retailer/settings", label: "Settings" },
 ];
 

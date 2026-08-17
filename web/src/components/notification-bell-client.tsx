@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { Bell } from "lucide-react";
 import { markNotificationsRead } from "@/app/actions";
+import { Card } from "@/components/ui/card";
 
 type NotificationItem = {
   id: string;
@@ -50,34 +51,34 @@ export function NotificationBellClient({
       <button
         type="button"
         onClick={toggle}
-        className="relative text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100"
+        className="relative text-ink-muted hover:text-ink transition-colors"
         aria-label="Notifications"
       >
         <Bell className="w-4 h-4" />
         {badgeCount > 0 && (
-          <span className="absolute -top-1.5 -right-1.5 bg-red-600 text-white text-[9px] font-bold rounded-full min-w-[15px] h-[15px] flex items-center justify-center px-0.5">
+          <span className="absolute -top-1.5 -right-1.5 bg-red-600 text-white text-[9px] font-bold rounded-full min-w-[15px] h-[15px] flex items-center justify-center px-0.5 ring-2 ring-white dark:ring-gray-950">
             {badgeCount}
           </span>
         )}
       </button>
       {open && (
-        <div className="absolute top-7 right-0 w-72 max-h-96 overflow-y-auto bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl shadow-lg z-50">
+        <Card className="absolute top-8 right-0 w-72 max-h-96 overflow-y-auto shadow-elevated z-50">
           {notifications.length === 0 ? (
-            <p className="p-4 text-xs text-gray-400 text-center">No notifications yet.</p>
+            <p className="p-4 text-xs text-ink-faint text-center">No notifications yet.</p>
           ) : (
             notifications.map((n) => (
               <div
                 key={n.id}
-                className={`p-3 text-xs border-b border-gray-100 dark:border-gray-800 last:border-0 ${
-                  n.read ? "" : "bg-green-50 dark:bg-green-900/10"
+                className={`p-3 text-xs border-b border-border last:border-0 ${
+                  n.read ? "" : "bg-primary-tint"
                 }`}
               >
-                <p className="text-gray-700 dark:text-gray-300">{n.message}</p>
-                <p className="text-[10px] text-gray-400 mt-1">{timeAgo(n.createdAt)}</p>
+                <p className="text-ink-muted">{n.message}</p>
+                <p className="text-[10px] text-ink-faint mt-1">{timeAgo(n.createdAt)}</p>
               </div>
             ))
           )}
-        </div>
+        </Card>
       )}
     </div>
   );

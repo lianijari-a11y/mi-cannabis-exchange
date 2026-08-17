@@ -17,9 +17,10 @@ const NAV = [
   { href: "/admin/listings", label: "All listings" },
   { href: "/admin/listings/new", label: "Post for a seller" },
   { href: "/admin/staff/new", label: "Add staff account" },
-  { href: "/admin/sales-reps", label: "Sales rep earnings" },
+  { href: "/admin/sales-reps", label: "Account Executive earnings" },
   { href: "/admin/data-uploads", label: "Data uploads" },
   { href: "/admin/metrc", label: "METRC" },
+  { href: "/admin/system-health", label: "System health" },
   { href: "/admin/marketing", label: "Marketing suite" },
 ];
 

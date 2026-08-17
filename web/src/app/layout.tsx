@@ -15,18 +15,21 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: "MI Cannabis Exchange — Wholesale Marketplace",
-    template: "%s · MI Cannabis Exchange",
+    default: "Cannabliz — Wholesale Marketplace",
+    template: "%s · Cannabliz",
   },
   description:
     "A blind wholesale marketplace connecting Michigan-licensed Growers, Processors, and Retailers, brokered by a neutral intermediary.",
   // manifest.ts covers Android/desktop install; iOS Safari still needs these
   // explicit tags to offer "Add to Home Screen" with the right icon/name and
   // to launch standalone (no browser chrome) instead of opening Safari.
+  // One PWA identity for the whole app (Cannabliz) — Xcelerate POS is a
+  // section within it (/retailer/pos), not a separately installable app.
+  // See CLAUDE.md §27.
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "MI Cannabis Exchange",
+    title: "Cannabliz",
   },
   icons: {
     icon: [{ url: "/favicon-32.png", sizes: "32x32", type: "image/png" }],

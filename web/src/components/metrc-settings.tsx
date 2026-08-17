@@ -16,15 +16,15 @@ export async function MetrcSettings({
       <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
         Michigan METRC connection
       </h2>
-      <p className="text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-900 rounded-lg p-2">
-        Scaffolding only — this app doesn't make any real METRC API calls yet. Your key is stored
-        so the connection is ready the moment that's turned on.
+      <p className="text-xs text-gray-500 dark:text-gray-400">
+        Used for real-time inventory tracking (e.g. the Point of Sale register) — Michigan
+        requires every retail sale to be reported to METRC&apos;s seed-to-sale system.
       </p>
 
       {connection && (
         <p className="text-xs text-gray-600 dark:text-gray-400">
-          Connected {connection.licenseNumber ? `(license ${connection.licenseNumber})` : ""} —{" "}
-          {connection.connectedAt.toISOString().slice(0, 10)}
+          Connected {connection.licenseNumber ? `(license ${connection.licenseNumber})` : ""} — key{" "}
+          {connection.userApiKey} — {connection.connectedAt.toISOString().slice(0, 10)}
         </p>
       )}
 
@@ -37,8 +37,7 @@ export async function MetrcSettings({
         />
         <input
           name="userApiKey"
-          placeholder="METRC User API Key"
-          defaultValue={connection?.userApiKey ?? ""}
+          placeholder={connection ? "Leave blank to keep current key" : "METRC User API Key"}
           className="w-full border border-gray-300 dark:border-gray-700 rounded-lg px-2 py-1.5 text-xs bg-transparent"
         />
         <div className="flex gap-2">

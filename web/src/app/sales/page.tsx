@@ -17,7 +17,7 @@ export default async function SalesRepPage() {
   const listings = await listingsCreatedByAssistant(session.user.id);
 
   return (
-    <PortalShell roleLabel="Sales Rep" navItems={NAV}>
+    <PortalShell roleLabel="Account Executive" navItems={NAV}>
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
           Listings you've posted

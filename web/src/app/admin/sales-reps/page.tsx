@@ -8,9 +8,10 @@ const NAV = [
   { href: "/admin/listings", label: "All listings" },
   { href: "/admin/listings/new", label: "Post for a seller" },
   { href: "/admin/staff/new", label: "Add staff account" },
-  { href: "/admin/sales-reps", label: "Sales rep earnings" },
+  { href: "/admin/sales-reps", label: "Account Executive earnings" },
   { href: "/admin/data-uploads", label: "Data uploads" },
   { href: "/admin/metrc", label: "METRC" },
+  { href: "/admin/system-health", label: "System health" },
   { href: "/admin/marketing", label: "Marketing suite" },
 ];
 
@@ -20,7 +21,7 @@ export default async function AdminSalesRepsPage() {
 
   return (
     <PortalShell roleLabel="Admin" navItems={NAV}>
-      <h1 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">Sales rep earnings</h1>
+      <h1 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">Account Executive earnings</h1>
       <p className="text-xs text-gray-500 dark:text-gray-400 mb-6">
         Standing commission rate applies automatically to every deal that closes from a listing
         the rep created. Computed once, when the retailer accepts delivery.
@@ -84,7 +85,7 @@ export default async function AdminSalesRepsPage() {
             </div>
           );
         })}
-        {reps.length === 0 && <p className="text-sm text-gray-500 dark:text-gray-400">No sales rep accounts yet.</p>}
+        {reps.length === 0 && <p className="text-sm text-gray-500 dark:text-gray-400">No Account Executive accounts yet.</p>}
       </div>
     </PortalShell>
   );

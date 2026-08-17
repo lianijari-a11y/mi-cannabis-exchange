@@ -6,12 +6,15 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "vitest run",
+    "test:load": "vitest run --config vitest.load.config.mts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.115.0",
     "@prisma/client": "6.19.3",
     "bcryptjs": "^3.0.3",
+    "jsbarcode": "^3.12.3",
     "lucide-react": "^0.487.0",
     "mammoth": "^1.12.1",
     "next": "^16.3.0",
@@ -35,6 +38,7 @@
     "prisma": "6.19.3",
     "tailwindcss": "^4",
     "tsx": "^4.23.4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^4.1.10"
   }
 }
