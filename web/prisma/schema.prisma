@@ -592,6 +592,17 @@ model Shipment {
   status  String  @default("assigned")
   podUrl  String? // proof-of-delivery photo/signature, uploaded by the transporter on delivery
 
+  // Added 2026-08-16 — free-text instructions for the transporter, set by
+  // whichever side owns that leg: the Grower/Processor sets pickup
+  // instructions (gate codes, dock/entrance to use, hours, who to ask for),
+  // the Retailer sets delivery instructions. Deliberately separate from
+  // ShipmentEvent notes (which are the transporter's own per-status-update
+  // log) and from scheduledPickupAt/scheduledDeliveryAt below (which are
+  // times, not directions) — this is the one place either side can leave a
+  // standing note the transporter sees before they ever show up.
+  pickupInstructions   String?
+  deliveryInstructions String?
+
   // Added 2026-08-16 — the transporter proposes a pickup/delivery window,
   // and both the grower and retailer have to explicitly accept it before the
   // transporter can move the shipment past "assigned" into "picked_up" (see
@@ -817,13 +828,15 @@ model LicenseRegistry {
 model Lead {
   id String @id @default(cuid())
 
-  // Which of the 4 imported lists this record came from — mirrors the
-  // source artifact's workspace tabs. "taino" | "leads" | "mi_processors" | "mi_dispensaries"
+  // Which of the 3 imported lists this record came from — mirrors the
+  // source artifact's workspace tabs, minus "taino" (the source tool had a
+  // 4th "Taino List" tab; the human confirmed it isn't used on this platform).
+  // "leads" | "mi_processors" | "mi_dispensaries"
   listKey String
 
-  // The source artifact's per-list primary dimension (e.g. license status
-  // for the MI lists, "Contacts" source tag for Taino) — kept as free text
-  // since its meaning and allowed values differ per list.
+  // The source artifact's per-list primary dimension — a call-status tag
+  // (NA/DC/AB/SALE/etc.), kept as free text since its meaning and allowed
+  // values differ per list and this app doesn't enforce a fixed set.
   primaryStatus String @default("")
 
   company    String

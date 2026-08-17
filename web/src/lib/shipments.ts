@@ -147,6 +147,33 @@ export async function acceptShipmentSchedule(
   });
 }
 
+// Added 2026-08-17 — the Grower/Processor sets standing pickup instructions
+// (gate code, dock/entrance, hours, who to ask for) and the Retailer sets
+// delivery instructions, each only touching their own field. Authorization
+// mirrors acceptShipmentSchedule's role split above. Free text, no history —
+// re-setting just overwrites, same posture as setTransportFee.
+export async function setPickupInstructions(shipmentId: string, growerId: string, text: string) {
+  const shipment = await prisma.shipment.findUnique({ where: { id: shipmentId }, include: { deal: true } });
+  if (!shipment || shipment.deal.sellerId !== growerId) {
+    throw new Error("Not authorized for this shipment.");
+  }
+  await prisma.shipment.update({
+    where: { id: shipmentId },
+    data: { pickupInstructions: text.trim() || null },
+  });
+}
+
+export async function setDeliveryInstructions(shipmentId: string, retailerId: string, text: string) {
+  const shipment = await prisma.shipment.findUnique({ where: { id: shipmentId }, include: { deal: true } });
+  if (!shipment || shipment.deal.retailerId !== retailerId) {
+    throw new Error("Not authorized for this shipment.");
+  }
+  await prisma.shipment.update({
+    where: { id: shipmentId },
+    data: { deliveryInstructions: text.trim() || null },
+  });
+}
+
 // Added 2026-08-16 — the transporter's own fee for hauling this load,
 // separate from the deal's price and the broker's commission (§11). The
 // transporter sets amount + who pays (grower/retailer/split) once; editing

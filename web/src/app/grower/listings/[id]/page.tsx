@@ -7,6 +7,7 @@ import {
   splitContractRespond,
   confirmListingFresh,
   acceptShipmentSchedule,
+  setPickupInstructions,
   acceptRejectionCounter,
   requireReturnInsteadOfCounter,
 } from "./actions";
@@ -36,6 +37,7 @@ export default async function GrowerListingDetailPage({
         splitContractRespondAction={splitContractRespond}
         confirmFreshAction={confirmListingFresh}
         acceptScheduleAction={acceptShipmentSchedule}
+        setPickupInstructionsAction={setPickupInstructions}
         acceptRejectionCounterAction={acceptRejectionCounter}
         requireReturnAction={requireReturnInsteadOfCounter}
       />

@@ -6,6 +6,7 @@ import {
   handleSplitContractRespond,
   handleConfirmListingFresh,
   handleAcceptShipmentSchedule,
+  handleSetPickupInstructions,
   handleAcceptRejectionCounter,
   handleRequireReturnInsteadOfCounter,
 } from "@/lib/seller-actions";
@@ -28,6 +29,10 @@ export async function confirmListingFresh(formData: FormData) {
 
 export async function acceptShipmentSchedule(formData: FormData) {
   await handleAcceptShipmentSchedule("grower", formData);
+}
+
+export async function setPickupInstructions(formData: FormData) {
+  await handleSetPickupInstructions("grower", formData);
 }
 
 export async function acceptRejectionCounter(formData: FormData) {

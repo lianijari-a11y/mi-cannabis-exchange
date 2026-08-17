@@ -4,10 +4,12 @@ import { useState } from "react";
 import { ShipmentTimeline } from "@/components/deal/shipment-timeline";
 import { ProductDecisionForm } from "@/components/deal/product-decision-form";
 import { ScheduleAcceptPanel } from "@/components/deal/schedule-accept-panel";
+import { InstructionsPanel } from "@/components/deal/instructions-panel";
 
 type DealShipment = {
   id: string;
   status: string;
+  deliveryInstructions: string | null;
   scheduledPickupAt: Date | null;
   scheduledDeliveryAt: Date | null;
   growerAcceptedSchedule: boolean;
@@ -138,6 +140,7 @@ export function DealPanelRetailer({
   chooseReturnAction,
   proposeRejectionCounterAction,
   acceptScheduleAction,
+  setDeliveryInstructionsAction,
 }: {
   deal: Deal;
   listingId: string;
@@ -148,6 +151,7 @@ export function DealPanelRetailer({
   chooseReturnAction?: (formData: FormData) => void;
   proposeRejectionCounterAction?: (formData: FormData) => void;
   acceptScheduleAction?: (formData: FormData) => void;
+  setDeliveryInstructionsAction?: (formData: FormData) => void;
 }) {
   const preferred = transporters.find((t) => t.preferredTransporter);
 
@@ -228,6 +232,16 @@ export function DealPanelRetailer({
           shipmentId={deal.shipment.id}
           listingId={listingId}
           acceptAction={acceptScheduleAction}
+        />
+      )}
+
+      {deal.shipment && setDeliveryInstructionsAction && (
+        <InstructionsPanel
+          label="Delivery instructions for the transporter"
+          value={deal.shipment.deliveryInstructions}
+          shipmentId={deal.shipment.id}
+          listingId={listingId}
+          action={setDeliveryInstructionsAction}
         />
       )}
 

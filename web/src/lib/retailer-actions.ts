@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/dal";
 import { prisma } from "@/lib/prisma";
 import { getOrCreateThread, addOfferRound, type RoundAction } from "@/lib/offers";
-import { acceptInvoiceAndAssignTransporter, acceptShipmentSchedule } from "@/lib/shipments";
+import { acceptInvoiceAndAssignTransporter, acceptShipmentSchedule, setDeliveryInstructions } from "@/lib/shipments";
 import { toggleWatchlist } from "@/lib/watchlist";
 import { toggleDismissal } from "@/lib/dismissals";
 import { acceptProduct, rejectProduct, chooseReturn, proposeRejectionCounter } from "@/lib/commission";
@@ -139,6 +139,18 @@ export async function handleAcceptShipmentSchedule(formData: FormData) {
   const shipmentId = String(formData.get("shipmentId") ?? "");
   const listingId = String(formData.get("listingId") ?? "");
   await acceptShipmentSchedule(shipmentId, session.user.id, "retailer");
+  redirect(`/retailer/listings/${listingId}`);
+}
+
+// Retailer sets standing delivery instructions for the transporter — gate
+// code, dock/entrance, hours, who to ask for. See lib/shipments.ts's
+// setDeliveryInstructions.
+export async function handleSetDeliveryInstructions(formData: FormData) {
+  const session = await requireRole("retailer");
+  const shipmentId = String(formData.get("shipmentId") ?? "");
+  const listingId = String(formData.get("listingId") ?? "");
+  const instructions = String(formData.get("instructions") ?? "");
+  await setDeliveryInstructions(shipmentId, session.user.id, instructions);
   redirect(`/retailer/listings/${listingId}`);
 }
 

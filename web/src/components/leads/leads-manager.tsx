@@ -7,6 +7,9 @@ import {
   type LeadDisposition,
   type LeadListKey,
 } from "@/lib/leads-constants";
+import { PowerDialer } from "./power-dialer";
+import { CallbackCalendar } from "./callback-calendar";
+import { LeadDashboard } from "./lead-dashboard";
 
 type LeadActivity = { id: string; text: string; createdAt: string | Date };
 
@@ -93,6 +96,7 @@ export function LeadsManager({
   const [noteDraftId, setNoteDraftId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [overlay, setOverlay] = useState<"none" | "dialer" | "calendar" | "dashboard">("none");
 
   const dispCounts = useMemo(() => {
     const c: Record<string, number> = {};
@@ -159,6 +163,27 @@ export function LeadsManager({
           className="bg-green-700 text-white rounded-lg px-3 py-1.5 text-sm font-medium"
         >
           + Add lead
+        </button>
+        <button
+          type="button"
+          onClick={() => setOverlay("dialer")}
+          className="rounded-lg px-3 py-1.5 text-sm font-medium bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900"
+        >
+          ▶ Power Dialer
+        </button>
+        <button
+          type="button"
+          onClick={() => setOverlay("calendar")}
+          className="rounded-lg px-3 py-1.5 text-sm font-medium bg-amber-600 text-white"
+        >
+          📅 Callbacks
+        </button>
+        <button
+          type="button"
+          onClick={() => setOverlay("dashboard")}
+          className="rounded-lg px-3 py-1.5 text-sm font-medium bg-blue-700 text-white"
+        >
+          📊 Dashboard
         </button>
         <label className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 ml-auto">
           <input type="checkbox" checked={showDeleted} onChange={(e) => setShowDeleted(e.target.checked)} />
@@ -429,6 +454,20 @@ export function LeadsManager({
           <p className="text-sm text-gray-500 dark:text-gray-400 py-6 text-center">No leads match.</p>
         )}
       </div>
+
+      {overlay === "dialer" && (
+        <PowerDialer
+          leads={leads}
+          actions={{
+            setDispositionAction: actions.setDispositionAction,
+            logCallAction: actions.logCallAction,
+            addNoteAction: actions.addNoteAction,
+          }}
+          onClose={() => setOverlay("none")}
+        />
+      )}
+      {overlay === "calendar" && <CallbackCalendar leads={leads} onClose={() => setOverlay("none")} />}
+      {overlay === "dashboard" && <LeadDashboard leads={leads} onClose={() => setOverlay("none")} />}
     </div>
   );
 }

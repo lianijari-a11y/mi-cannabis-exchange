@@ -16,6 +16,7 @@ export async function SellerListingDetail({
   splitContractRespondAction,
   confirmFreshAction,
   acceptScheduleAction,
+  setPickupInstructionsAction,
   acceptRejectionCounterAction,
   requireReturnAction,
 }: {
@@ -26,6 +27,7 @@ export async function SellerListingDetail({
   splitContractRespondAction: (formData: FormData) => void;
   confirmFreshAction?: (formData: FormData) => void;
   acceptScheduleAction?: (formData: FormData) => void;
+  setPickupInstructionsAction?: (formData: FormData) => void;
   acceptRejectionCounterAction?: (formData: FormData) => void;
   requireReturnAction?: (formData: FormData) => void;
 }) {
@@ -182,6 +184,7 @@ export async function SellerListingDetail({
                   listingId={listing.id}
                   invoiceAction={invoiceAction}
                   acceptScheduleAction={acceptScheduleAction}
+                  setPickupInstructionsAction={setPickupInstructionsAction}
                   acceptRejectionCounterAction={acceptRejectionCounterAction}
                   requireReturnAction={requireReturnAction}
                 />

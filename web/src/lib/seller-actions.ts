@@ -4,7 +4,7 @@ import { requireRole } from "@/lib/dal";
 import { prisma } from "@/lib/prisma";
 import { createListing, confirmListingFresh } from "@/lib/listings";
 import { addOfferRound, type RoundAction } from "@/lib/offers";
-import { uploadInvoice, acceptShipmentSchedule } from "@/lib/shipments";
+import { uploadInvoice, acceptShipmentSchedule, setPickupInstructions } from "@/lib/shipments";
 import { respondToSplitContract } from "@/lib/split-contracts";
 import { acceptRejectionCounter, requireReturnInsteadOfCounter } from "@/lib/commission";
 import { CATEGORIES, LICENSED_ROLES, TERMS, type SellerRole } from "@/lib/constants";
@@ -149,6 +149,18 @@ export async function handleAcceptShipmentSchedule(role: SellerRole, formData: F
   const shipmentId = String(formData.get("shipmentId") ?? "");
   const listingId = String(formData.get("listingId") ?? "");
   await acceptShipmentSchedule(shipmentId, session.user.id, "grower");
+  redirect(`/${role}/listings/${listingId}`);
+}
+
+// Seller (Grower/Processor) sets standing pickup instructions for the
+// transporter — gate code, dock/entrance, hours, who to ask for. See
+// lib/shipments.ts's setPickupInstructions.
+export async function handleSetPickupInstructions(role: SellerRole, formData: FormData) {
+  const session = await requireRole(role);
+  const shipmentId = String(formData.get("shipmentId") ?? "");
+  const listingId = String(formData.get("listingId") ?? "");
+  const instructions = String(formData.get("instructions") ?? "");
+  await setPickupInstructions(shipmentId, session.user.id, instructions);
   redirect(`/${role}/listings/${listingId}`);
 }
 

@@ -92,6 +92,31 @@ export async function TransporterShipmentDetail({
           <AddressBlock label="Pickup" party={shipment.deal.seller} />
           <AddressBlock label="Delivery" party={shipment.deal.retailer} />
         </div>
+
+        {(shipment.pickupInstructions || shipment.deliveryInstructions) && (
+          <div className="grid sm:grid-cols-2 gap-4">
+            {shipment.pickupInstructions && (
+              <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-900 rounded-lg p-2.5">
+                <p className="text-[10px] uppercase tracking-wide text-amber-700 dark:text-amber-400 font-medium mb-1">
+                  Pickup instructions
+                </p>
+                <p className="text-xs text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
+                  {shipment.pickupInstructions}
+                </p>
+              </div>
+            )}
+            {shipment.deliveryInstructions && (
+              <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-900 rounded-lg p-2.5">
+                <p className="text-[10px] uppercase tracking-wide text-amber-700 dark:text-amber-400 font-medium mb-1">
+                  Delivery instructions
+                </p>
+                <p className="text-xs text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
+                  {shipment.deliveryInstructions}
+                </p>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {error && <p className="text-xs text-red-600">{error}</p>}

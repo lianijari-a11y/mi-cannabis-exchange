@@ -1,9 +1,11 @@
 import { ShipmentTimeline } from "@/components/deal/shipment-timeline";
 import { ScheduleAcceptPanel } from "@/components/deal/schedule-accept-panel";
+import { InstructionsPanel } from "@/components/deal/instructions-panel";
 
 type DealShipment = {
   id: string;
   status: string;
+  pickupInstructions: string | null;
   scheduledPickupAt: Date | null;
   scheduledDeliveryAt: Date | null;
   growerAcceptedSchedule: boolean;
@@ -61,6 +63,7 @@ export function DealPanelSeller({
   listingId,
   invoiceAction,
   acceptScheduleAction,
+  setPickupInstructionsAction,
   acceptRejectionCounterAction,
   requireReturnAction,
 }: {
@@ -68,6 +71,7 @@ export function DealPanelSeller({
   listingId: string;
   invoiceAction: (formData: FormData) => void;
   acceptScheduleAction?: (formData: FormData) => void;
+  setPickupInstructionsAction?: (formData: FormData) => void;
   acceptRejectionCounterAction?: (formData: FormData) => void;
   requireReturnAction?: (formData: FormData) => void;
 }) {
@@ -149,6 +153,16 @@ export function DealPanelSeller({
           shipmentId={deal.shipment.id}
           listingId={listingId}
           acceptAction={acceptScheduleAction}
+        />
+      )}
+
+      {deal.shipment && setPickupInstructionsAction && (
+        <InstructionsPanel
+          label="Pickup instructions for the transporter"
+          value={deal.shipment.pickupInstructions}
+          shipmentId={deal.shipment.id}
+          listingId={listingId}
+          action={setPickupInstructionsAction}
         />
       )}
 

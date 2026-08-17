@@ -9,6 +9,7 @@ import {
   chooseReturn,
   proposeRejectionCounter,
   acceptShipmentSchedule,
+  setDeliveryInstructions,
 } from "./actions";
 
 const NAV = [
@@ -42,6 +43,7 @@ export default async function RetailerListingDetailPage({
         chooseReturnAction={chooseReturn}
         proposeRejectionCounterAction={proposeRejectionCounter}
         acceptScheduleAction={acceptShipmentSchedule}
+        setDeliveryInstructionsAction={setDeliveryInstructions}
         error={error}
       />
     </PortalShell>

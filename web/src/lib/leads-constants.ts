@@ -2,11 +2,14 @@
 // (components/leads/leads-manager.tsx) code — kept out of lib/leads.ts so
 // the client bundle never pulls in "server-only" + Prisma.
 
-export const LEAD_LIST_KEYS = ["taino", "leads", "mi_processors", "mi_dispensaries"] as const;
+// Taino List (NY) is deliberately excluded — the human confirmed it's not
+// used for this platform. MI Processors and MI Dispensaries are populated
+// from the state's own CRA license exports (see CLAUDE.md §20), not from
+// the source CRM tool's own export.
+export const LEAD_LIST_KEYS = ["leads", "mi_processors", "mi_dispensaries"] as const;
 export type LeadListKey = (typeof LEAD_LIST_KEYS)[number];
 
 export const LEAD_LIST_LABELS: Record<LeadListKey, string> = {
-  taino: "Taino List (NY)",
   leads: "Lead Directory (MI)",
   mi_processors: "MI Processors",
   mi_dispensaries: "MI Dispensaries",
