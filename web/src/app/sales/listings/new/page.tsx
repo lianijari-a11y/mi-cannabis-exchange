@@ -1,7 +1,7 @@
 import { requireRole } from "@/lib/dal";
 import { PortalShell } from "@/components/portal-shell";
 import { ListingForm } from "@/components/seller/listing-form";
-import { SellerPicker } from "@/components/sales/seller-picker";
+import { SellerPickerOrCreate } from "@/components/sales/seller-picker-or-create";
 import { createListingAsSalesRep, createListingsBulkAsSalesRep } from "./actions";
 import { searchSellersAction } from "@/app/sales/search-action";
 
@@ -33,7 +33,7 @@ export default async function NewSalesRepListingPage({
         action={createListingAsSalesRep}
         bulkAction={createListingsBulkAsSalesRep}
         error={error}
-        sellerPickerSlot={<SellerPicker searchAction={searchSellersAction} />}
+        sellerPickerSlot={<SellerPickerOrCreate searchAction={searchSellersAction} />}
       />
     </PortalShell>
   );

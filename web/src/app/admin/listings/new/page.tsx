@@ -1,7 +1,7 @@
 import { requireRole } from "@/lib/dal";
 import { PortalShell } from "@/components/portal-shell";
 import { ListingForm } from "@/components/seller/listing-form";
-import { SellerPicker } from "@/components/sales/seller-picker";
+import { SellerPickerOrCreate } from "@/components/sales/seller-picker-or-create";
 import { createListingAsAdmin, createListingsBulkAsAdmin } from "./actions";
 import { searchSellersAction } from "@/app/admin/search-action";
 
@@ -38,7 +38,7 @@ export default async function NewAdminListingPage({
         action={createListingAsAdmin}
         bulkAction={createListingsBulkAsAdmin}
         error={error}
-        sellerPickerSlot={<SellerPicker searchAction={searchSellersAction} />}
+        sellerPickerSlot={<SellerPickerOrCreate searchAction={searchSellersAction} />}
       />
     </PortalShell>
   );
