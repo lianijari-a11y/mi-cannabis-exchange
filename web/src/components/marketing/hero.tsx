@@ -40,8 +40,8 @@ export function Hero() {
 
           <p className="mt-5 text-lg text-gray-600 dark:text-gray-400 max-w-xl">
             Growers, processors, retailers, and brokers run every listing, negotiation,
-            invoice, and shipment through one blind, broker-mediated exchange — built around
-            how Michigan&apos;s licensed wholesale market actually moves product.
+            invoice, and shipment through one blind, broker-mediated exchange — then sell
+            it at the counter on Xcelerate POS, the built-in retail register.
           </p>
 
           <div className="mt-8 flex flex-wrap items-center gap-3">

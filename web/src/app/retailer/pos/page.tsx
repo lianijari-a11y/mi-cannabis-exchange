@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
-import { requireRole } from "@/lib/dal";
+import { requirePosAccess } from "@/lib/dal";
+import { ROLE_LABELS } from "@/lib/constants";
 import { PortalShell } from "@/components/portal-shell";
 import { prisma } from "@/lib/prisma";
 import {
@@ -40,7 +41,10 @@ export const metadata: Metadata = {
   },
 };
 
-const NAV = [
+// Full wholesale-marketplace nav for the Retailer owner. A Budtender staff
+// account (CLAUDE.md §33) gets only this page — no browse/negotiate/
+// settings — so it doesn't get this array at all, see below.
+const RETAILER_NAV = [
   { href: "/retailer", label: "Browse inventory" },
   { href: "/retailer/negotiations", label: "My negotiations" },
   { href: "/retailer/watchlist", label: "Watchlist" },
@@ -49,26 +53,34 @@ const NAV = [
   { href: "/retailer/settings", label: "Settings" },
 ];
 
+const BUDTENDER_NAV = [{ href: "/retailer/pos", label: "Point of sale" }];
+
 export default async function RetailerPosPage() {
-  const session = await requireRole("retailer");
+  const { session, retailerId } = await requirePosAccess();
   const [deals, lots, sales, orders, user, metrcConnection, smsConnection, optedInCount, marketingMessages] =
     await Promise.all([
-      availableDealsForIntake(session.user.id),
-      activeInventoryForRetailer(session.user.id),
-      salesHistoryForRetailer(session.user.id),
-      pendingOrdersForRetailer(session.user.id),
+      availableDealsForIntake(retailerId),
+      activeInventoryForRetailer(retailerId),
+      salesHistoryForRetailer(retailerId),
+      pendingOrdersForRetailer(retailerId),
       prisma.user.findUnique({
-        where: { id: session.user.id },
+        where: { id: retailerId },
         select: { defaultMarkupPercent: true, dailyPurchaseLimitOz: true },
       }),
-      metrcConnectionFor(session.user.id),
-      smsConnectionFor(session.user.id),
-      optedInCustomerCount(session.user.id),
-      messageHistoryForRetailer(session.user.id),
+      metrcConnectionFor(retailerId),
+      smsConnectionFor(retailerId),
+      optedInCustomerCount(retailerId),
+      messageHistoryForRetailer(retailerId),
     ]);
 
+  const isBudtender = session.user.role === "budtender";
+
   return (
-    <PortalShell roleLabel="Retailer" navItems={NAV} brand="xcelerate">
+    <PortalShell
+      roleLabel={ROLE_LABELS[session.user.role as "retailer" | "budtender"]}
+      navItems={isBudtender ? BUDTENDER_NAV : RETAILER_NAV}
+      brand="xcelerate"
+    >
       <LiveRefresh />
       <div className="mb-4">
         <h1 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Point of sale</h1>
@@ -79,10 +91,13 @@ export default async function RetailerPosPage() {
           <p className="text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-900 rounded-lg p-2 mt-2 max-w-xl">
             No METRC connection on file — sales will still ring up, but nothing will be reported
             for seed-to-sale tracking.{" "}
-            <a href="/retailer/settings" className="underline">
-              Connect METRC
-            </a>
-            .
+            {isBudtender ? (
+              "Ask the store owner to connect it in Settings."
+            ) : (
+              <a href="/retailer/settings" className="underline">
+                Connect METRC
+              </a>
+            )}
           </p>
         )}
       </div>

@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { requireRole } from "@/lib/dal";
 import { connectMetrc, disconnectMetrc } from "@/lib/metrc-integration";
 import { setDefaultMarkupPercent, setStorefrontSlug, setLoyaltySettings, setDailyPurchaseLimitOz } from "@/lib/pos";
+import { createBudtenderAccount, removeBudtenderAccount } from "@/lib/staff";
 
 export async function connectMetrcAction(formData: FormData) {
   const session = await requireRole("retailer");
@@ -48,5 +49,31 @@ export async function setStorefrontSlugAction(formData: FormData) {
     const message = err instanceof Error ? err.message : "Couldn't save that store link.";
     redirect(`/retailer/settings?error=${encodeURIComponent(message)}`);
   }
+  revalidatePath("/retailer/settings");
+}
+
+// Budtender staff accounts (CLAUDE.md §33) — only the Retailer owner can
+// create/remove them, never a budtender themselves (requireRole("retailer")
+// rejects a budtender session the same as any other page under
+// /retailer/settings — see requirePosAccess in lib/dal.ts for the one
+// exception, /retailer/pos itself).
+export async function createBudtenderAction(formData: FormData) {
+  const session = await requireRole("retailer");
+  const fullName = String(formData.get("fullName") ?? "");
+  const email = String(formData.get("email") ?? "");
+  const password = String(formData.get("password") ?? "");
+  try {
+    await createBudtenderAccount(session.user.id, { fullName, email, password });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Couldn't create that staff account.";
+    redirect(`/retailer/settings?staffError=${encodeURIComponent(message)}`);
+  }
+  revalidatePath("/retailer/settings");
+}
+
+export async function removeBudtenderAction(formData: FormData) {
+  const session = await requireRole("retailer");
+  const budtenderId = String(formData.get("budtenderId") ?? "");
+  await removeBudtenderAccount(session.user.id, budtenderId);
   revalidatePath("/retailer/settings");
 }

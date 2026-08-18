@@ -49,8 +49,8 @@ export function SiteFooter() {
           </span>
         </div>
         <p className="text-xs text-gray-400 dark:text-gray-600 text-center">
-          A wholesale marketplace for Michigan-licensed cannabis operators. Not affiliated with
-          the State of Michigan.
+          A wholesale marketplace and retail POS (Xcelerate POS) for Michigan-licensed cannabis
+          operators. Not affiliated with the State of Michigan.
         </p>
         <div className="flex items-center gap-4 text-xs text-gray-500 dark:text-gray-400">
           <Link href="/login" className="hover:text-gray-900 dark:hover:text-gray-100">

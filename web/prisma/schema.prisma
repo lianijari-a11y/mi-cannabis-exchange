@@ -86,6 +86,15 @@ model User {
   loyaltyPointsPerDollar Float?
   dailyPurchaseLimitOz   Float?
 
+  // Budtender staff accounts (CLAUDE.md §33) — created by a Retailer to
+  // operate Xcelerate POS only, never the wholesale marketplace. Only set
+  // for role = budtender; points back at the Retailer whose inventory,
+  // customers, and sales they act on. Cascade delete: a budtender account
+  // has no meaning once its owning Retailer is gone.
+  retailerOwnerId String?
+  retailerOwner   User?   @relation("RetailerStaff", fields: [retailerOwnerId], references: [id], onDelete: Cascade)
+  staff           User[]  @relation("RetailerStaff")
+
   // Stable anonymous handle shown to the counterparty across the blind
   // marketplace boundary, e.g. "Grower #A17". Generated once at signup,
   // never derived from the real name so it can't leak identity. Transporters
@@ -125,6 +134,7 @@ model User {
   smsConnection              SmsConnection?
   marketingMessages          MarketingMessage[]
 
+  @@index([retailerOwnerId])
   @@map("users")
 }
 

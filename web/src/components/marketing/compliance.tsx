@@ -1,4 +1,4 @@
-import { EyeOff, Handshake, ShieldCheck, ScrollText } from "lucide-react";
+import { EyeOff, Handshake, ShieldCheck, ScrollText, Lock, Wallet } from "lucide-react";
 
 const PILLARS = [
   {
@@ -21,6 +21,16 @@ const PILLARS = [
     title: "Negotiation tooling, not a manifest",
     body: "A Deal here is a negotiated agreement and a Shipment is operational tracking — the actual license-to-license transfer and your METRC manifest still happen the way they always have, outside this app.",
   },
+  {
+    icon: Lock,
+    title: "Credentials encrypted at rest",
+    body: "METRC and payment-connection API keys are encrypted, not stored in plain text — settings forms show a masked reference, never the live value, and a blank field always means \"keep what's on file.\"",
+  },
+  {
+    icon: Wallet,
+    title: "Every dollar tracked, none of it moved",
+    body: "Commission, rejection fees, transport fees, and POS sales are all recorded here — this app has never processed a card, an ACH transfer, or cash. Money changes hands the way it always has, off-platform.",
+  },
 ];
 
 export function Compliance() {
@@ -42,7 +52,7 @@ export function Compliance() {
         </p>
       </div>
 
-      <div className="mt-10 grid sm:grid-cols-2 gap-5">
+      <div className="mt-10 grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
         {PILLARS.map((p) => (
           <div
             key={p.title}

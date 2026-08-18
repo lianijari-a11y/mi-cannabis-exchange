@@ -15,6 +15,8 @@ import {
   Wallet,
   ClipboardCheck,
   AlertTriangle,
+  Headset,
+  Phone,
 } from "lucide-react";
 import { ConsolePanel, Pill } from "./widgets";
 
@@ -213,6 +215,41 @@ function TransporterMockup() {
   );
 }
 
+function AccountExecMockup() {
+  return (
+    <ConsolePanel title="account executive · marketing suite" live>
+      <div className="rounded-lg border border-amber-900/40 bg-amber-950/20 p-3">
+        <div className="flex items-center gap-1.5 text-xs text-amber-400">
+          <AlertTriangle className="w-3.5 h-3.5" /> Low stock alert
+        </div>
+        <p className="mt-1 text-xs text-gray-300">Retail Group Inc is low on Blue Dream (Flower)</p>
+      </div>
+      <div className="mt-3 space-y-1.5">
+        {[
+          { name: "Northside Provisions", d: "Grower lead · called 3x", icon: Phone },
+          { name: "Great Lakes Dispensary", d: "Callback tomorrow 2pm", icon: Headset },
+        ].map((row) => (
+          <div
+            key={row.name}
+            className="flex items-center justify-between rounded-lg border border-gray-800 bg-gray-900/70 px-3 py-2"
+          >
+            <div className="flex items-center gap-2">
+              <row.icon className="w-3.5 h-3.5 text-gray-500" />
+              <div>
+                <p className="text-xs font-medium text-gray-200">{row.name}</p>
+                <p className="text-[10px] text-gray-500">{row.d}</p>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+      <p className="mt-3 text-[10px] text-gray-600">
+        Every active retailer, every lead, one dashboard — mobile-first, same tier as Broker.
+      </p>
+    </ConsolePanel>
+  );
+}
+
 function AdminMockup() {
   return (
     <ConsolePanel title="admin · verification queue">
@@ -251,7 +288,7 @@ export function Roles() {
       <div className="max-w-6xl mx-auto px-4 py-20">
         <div className="max-w-2xl">
           <p className="text-xs font-semibold uppercase tracking-wide text-green-700 dark:text-green-400">
-            Six roles, one exchange
+            Seven roles, one exchange
           </p>
           <h2 className="mt-2 text-3xl font-semibold text-gray-900 dark:text-gray-100">
             A dedicated portal for every seat at the table
@@ -315,6 +352,19 @@ export function Roles() {
             ]}
             mockup={<TransporterMockup />}
             reverse
+          />
+          <RoleRow
+            icon={Headset}
+            eyebrow="Account Executive"
+            title="Solicit growers, watch inventory, close the loop"
+            body="Same trust tier as Broker — platform staff, not a licensed cultivator. Builds listings on behalf of a grower or processor they've signed, and gets pinged the moment a retailer's shelf runs low."
+            bullets={[
+              "Own lead CRM: call logging, dispositions, callback calendar, dashboard",
+              "Notified the instant any retailer's POS inventory crosses a low-stock threshold",
+              "Post a listing under the seller's real identity — audit trail only, never shown to buyers",
+              "Commission rate set by Admin, computed automatically at product acceptance",
+            ]}
+            mockup={<AccountExecMockup />}
           />
           <RoleRow
             icon={ShieldCheck}

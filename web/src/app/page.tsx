@@ -5,6 +5,7 @@ import { SiteHeader } from "@/components/marketing/site-header";
 import { Hero } from "@/components/marketing/hero";
 import { CapabilityStrip } from "@/components/marketing/capability-strip";
 import { Flow } from "@/components/marketing/flow";
+import { Xcelerate } from "@/components/marketing/xcelerate";
 import { Roles } from "@/components/marketing/roles";
 import { Compliance } from "@/components/marketing/compliance";
 import { FinalCta, SiteFooter } from "@/components/marketing/cta-footer";
@@ -21,6 +22,7 @@ export default async function Home() {
       <Hero />
       <CapabilityStrip />
       <Flow />
+      <Xcelerate />
       <Roles />
       <Compliance />
       <FinalCta />

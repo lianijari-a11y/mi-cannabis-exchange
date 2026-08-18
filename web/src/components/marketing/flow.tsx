@@ -1,4 +1,4 @@
-import { PackagePlus, MessagesSquare, FileCheck2, Truck } from "lucide-react";
+import { PackagePlus, MessagesSquare, FileCheck2, Truck, ShoppingCart } from "lucide-react";
 
 const STEPS = [
   {
@@ -21,6 +21,11 @@ const STEPS = [
     title: "Transport & deliver",
     body: "The assigned transporter moves the shipment through assigned → picked up → in transit → delivered, one step at a time, visible to everyone on the deal.",
   },
+  {
+    icon: ShoppingCart,
+    title: "Sell at retail",
+    body: "Once delivered, convert the deal into POS inventory and ring it up on Xcelerate POS — barcode scan, loyalty points, discounts, and a live METRC sales submission.",
+  },
 ];
 
 export function Flow() {
@@ -40,10 +45,10 @@ export function Flow() {
         </p>
       </div>
 
-      <div className="mt-12 relative grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="mt-12 relative grid sm:grid-cols-2 lg:grid-cols-5 gap-6">
         <div
           aria-hidden
-          className="hidden lg:block absolute top-6 left-[12.5%] right-[12.5%] h-px bg-gray-200 dark:bg-gray-800"
+          className="hidden lg:block absolute top-6 left-[10%] right-[10%] h-px bg-gray-200 dark:bg-gray-800"
         />
         {STEPS.map((step, i) => (
           <div key={step.title} className="relative">

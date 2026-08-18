@@ -1,4 +1,4 @@
-import { Infinity, Eye, FileText, Truck, Sparkles, LineChart } from "lucide-react";
+import { Infinity, Eye, FileText, Truck, Sparkles, LineChart, ShoppingCart, Gift } from "lucide-react";
 
 const CAPABILITIES = [
   { icon: Infinity, label: "Unlimited counter-offer rounds" },
@@ -7,6 +7,8 @@ const CAPABILITIES = [
   { icon: Truck, label: "Shipment tracked step by step" },
   { icon: Sparkles, label: "AI-assisted listing drafts" },
   { icon: LineChart, label: "Live market pulse pricing" },
+  { icon: ShoppingCart, label: "Xcelerate POS retail register" },
+  { icon: Gift, label: "Customer loyalty & purchase habits" },
 ];
 
 export function CapabilityStrip() {

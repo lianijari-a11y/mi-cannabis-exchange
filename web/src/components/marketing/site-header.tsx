@@ -2,6 +2,7 @@ import Link from "next/link";
 
 const NAV_LINKS = [
   { href: "#how-it-works", label: "How it works" },
+  { href: "#xcelerate-pos", label: "Xcelerate POS" },
   { href: "#roles", label: "Roles" },
   { href: "#compliance", label: "Trust & compliance" },
 ];

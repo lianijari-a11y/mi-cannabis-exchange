@@ -2,6 +2,7 @@ import { requireRole } from "@/lib/dal";
 import { PortalShell } from "@/components/portal-shell";
 import { MetrcSettings } from "@/components/metrc-settings";
 import { prisma } from "@/lib/prisma";
+import { budtendersForRetailer } from "@/lib/staff";
 import {
   connectMetrcAction,
   disconnectMetrcAction,
@@ -9,6 +10,8 @@ import {
   setStorefrontSlugAction,
   setLoyaltySettingsAction,
   setDailyPurchaseLimitAction,
+  createBudtenderAction,
+  removeBudtenderAction,
 } from "./actions";
 
 const NAV = [
@@ -23,19 +26,22 @@ const NAV = [
 export default async function RetailerSettingsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; staffError?: string }>;
 }) {
   const session = await requireRole("retailer");
-  const { error } = await searchParams;
-  const user = await prisma.user.findUnique({
-    where: { id: session.user.id },
-    select: {
-      defaultMarkupPercent: true,
-      storefrontSlug: true,
-      loyaltyPointsPerDollar: true,
-      dailyPurchaseLimitOz: true,
-    },
-  });
+  const { error, staffError } = await searchParams;
+  const [user, budtenders] = await Promise.all([
+    prisma.user.findUnique({
+      where: { id: session.user.id },
+      select: {
+        defaultMarkupPercent: true,
+        storefrontSlug: true,
+        loyaltyPointsPerDollar: true,
+        dailyPurchaseLimitOz: true,
+      },
+    }),
+    budtendersForRetailer(session.user.id),
+  ]);
 
   return (
     <PortalShell roleLabel="Retailer" navItems={NAV}>
@@ -151,6 +157,68 @@ export default async function RetailerSettingsPage({
             The purchase-limit bar only tracks flower/pre-roll sold by weight, and only once a
             customer is attached to the sale — it isn&apos;t a certified compliance check.
           </p>
+        </div>
+
+        <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-4 space-y-3 max-w-md">
+          <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+            Staff accounts (Budtenders)
+          </h2>
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            A budtender account signs in straight to Point of sale — no browse feed, no
+            negotiations, no settings, nothing wholesale-side. Only you can create or remove one.
+          </p>
+          {staffError && (
+            <p className="text-xs text-red-600 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-900 rounded-lg p-2">
+              {staffError}
+            </p>
+          )}
+          {budtenders.length > 0 && (
+            <ul className="space-y-1.5">
+              {budtenders.map((b) => (
+                <li
+                  key={b.id}
+                  className="flex items-center justify-between rounded-lg border border-gray-200 dark:border-gray-800 px-2.5 py-1.5 text-xs"
+                >
+                  <div>
+                    <p className="font-medium text-gray-900 dark:text-gray-100">{b.fullName}</p>
+                    <p className="text-gray-500 dark:text-gray-400">{b.email}</p>
+                  </div>
+                  <form action={removeBudtenderAction}>
+                    <input type="hidden" name="budtenderId" value={b.id} />
+                    <button type="submit" className="text-red-500 underline">
+                      Remove
+                    </button>
+                  </form>
+                </li>
+              ))}
+            </ul>
+          )}
+          <form action={createBudtenderAction} className="space-y-2 pt-1 border-t border-gray-100 dark:border-gray-800">
+            <input
+              name="fullName"
+              placeholder="Full name"
+              required
+              className="w-full border border-gray-300 dark:border-gray-700 rounded-lg px-2 py-1.5 text-xs bg-transparent"
+            />
+            <input
+              name="email"
+              type="email"
+              placeholder="Login email"
+              required
+              className="w-full border border-gray-300 dark:border-gray-700 rounded-lg px-2 py-1.5 text-xs bg-transparent"
+            />
+            <input
+              name="password"
+              type="password"
+              placeholder="Temporary password (8+ characters)"
+              required
+              minLength={8}
+              className="w-full border border-gray-300 dark:border-gray-700 rounded-lg px-2 py-1.5 text-xs bg-transparent"
+            />
+            <button type="submit" className="bg-green-700 text-white rounded-lg px-3 py-1.5 text-xs font-medium">
+              Add budtender
+            </button>
+          </form>
         </div>
       </div>
     </PortalShell>

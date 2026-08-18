@@ -29,6 +29,28 @@ export async function requireRole(role: Role) {
   return session;
 }
 
+// Budtender is a Retailer-created staff account scoped to Xcelerate POS
+// only (CLAUDE.md §33) — it never touches the wholesale marketplace, so
+// it's excluded from NON_CIRCUMVENT_GATED_ROLES the same way Admin is.
+// This resolves which retailer's data the caller should act on: their own
+// id for a real Retailer, or their parent retailer's id for a Budtender —
+// every POS route/action should use this instead of requireRole("retailer")
+// plus session.user.id directly.
+export async function requirePosAccess() {
+  const session = await auth();
+  if (!session?.user || (session.user.role !== "retailer" && session.user.role !== "budtender")) {
+    redirect("/login");
+  }
+  if (session.user.role === "retailer" && !(await hasAcceptedNonCircumvent(session.user.id))) {
+    redirect("/agreements/non-circumvent");
+  }
+  const retailerId = session.user.role === "retailer" ? session.user.id : session.user.retailerOwnerId;
+  if (!retailerId) {
+    redirect("/login");
+  }
+  return { session, retailerId };
+}
+
 export async function requireAuth() {
   const session = await auth();
   if (!session?.user) {

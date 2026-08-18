@@ -2,6 +2,7 @@ export const ROLES = [
   "grower",
   "processor",
   "retailer",
+  "budtender",
   "broker",
   "transporter",
   "sales_rep",
@@ -73,6 +74,7 @@ export const ROLE_LABELS: Record<Role, string> = {
   grower: "Grower",
   processor: "Processor",
   retailer: "Retailer",
+  budtender: "Budtender",
   broker: "Broker",
   transporter: "Transporter",
   sales_rep: "Account Executive",
@@ -106,6 +108,9 @@ export function roleHome(role: string): string {
       return "/processor";
     case "retailer":
       return "/retailer";
+    case "budtender":
+      // Budtenders only ever land on the register — see CLAUDE.md §33.
+      return "/retailer/pos";
     case "broker":
       return "/broker";
     case "transporter":
