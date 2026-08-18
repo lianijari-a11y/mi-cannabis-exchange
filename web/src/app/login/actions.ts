@@ -13,7 +13,7 @@ export async function login(_prevState: LoginState, formData: FormData): Promise
     await signIn("credentials", {
       email,
       password: formData.get("password"),
-      redirectTo: callbackUrl,
+      redirectTo: callbackUrl || "/",
     });
   } catch (err) {
     if (err instanceof AuthError) {
