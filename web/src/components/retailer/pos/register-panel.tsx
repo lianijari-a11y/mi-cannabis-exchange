@@ -4,6 +4,7 @@ import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { lookupSkuAction, checkoutAction } from "@/app/retailer/pos/actions";
 import { thcMgForLine, holidayInfo } from "@/lib/pos-calculations";
+import { CustomerPanel, type CustomerInfo } from "./customer-panel";
 
 export type CartLine = {
   lotId: string;
@@ -15,6 +16,7 @@ export type CartLine = {
   quantity: number;
   thcPercent: number | null;
   thcMgPerUnit: number | null;
+  discountAmount: number;
 };
 
 type Receipt = {
@@ -27,7 +29,14 @@ type Receipt = {
   orderType: string;
   customerName: string | null;
   createdAt: string;
-  lineItems: { productName: string; quantity: number; unit: string; unitPrice: number; lineTotal: number }[];
+  lineItems: {
+    productName: string;
+    quantity: number;
+    unit: string;
+    unitPrice: number;
+    discountAmount: number;
+    lineTotal: number;
+  }[];
 };
 
 const money = (n: number) => `$${n.toFixed(2)}`;
@@ -44,13 +53,14 @@ const ORDER_TYPE_LABELS: Record<string, string> = {
 // whatever's focused, identical to a keyboard, which submits this form.
 // Manual typing works the same way as a fallback. See CLAUDE.md §23 on why
 // this app doesn't use camera-based scanning.
-export function RegisterPanel() {
+export function RegisterPanel({ dailyPurchaseLimitOz }: { dailyPurchaseLimitOz: number | null }) {
   const router = useRouter();
   const [cart, setCart] = useState<CartLine[]>([]);
   const [sku, setSku] = useState("");
   const [tenderType, setTenderType] = useState<"cash" | "card" | "other">("cash");
   const [orderType, setOrderType] = useState<"in_store" | "pickup" | "curbside">("in_store");
   const [customerName, setCustomerName] = useState("");
+  const [customer, setCustomer] = useState<CustomerInfo | null>(null);
   const [taxRatePercent, setTaxRatePercent] = useState(16);
   const [error, setError] = useState<string | null>(null);
   const [receipt, setReceipt] = useState<Receipt | null>(null);
@@ -86,6 +96,7 @@ export function RegisterPanel() {
           quantity: 1,
           thcPercent: lot.thcPercent,
           thcMgPerUnit: lot.thcMgPerUnit,
+          discountAmount: 0,
         },
       ];
     });
@@ -96,11 +107,38 @@ export function RegisterPanel() {
     setCart((prev) => prev.map((l) => (l.lotId === lotId ? { ...l, quantity } : l)));
   }
 
+  function updateDiscount(lotId: string, discountAmount: number) {
+    setCart((prev) => prev.map((l) => (l.lotId === lotId ? { ...l, discountAmount: Math.max(0, discountAmount) } : l)));
+  }
+
   function removeLine(lotId: string) {
     setCart((prev) => prev.filter((l) => l.lotId !== lotId));
   }
 
-  const subtotal = cart.reduce((sum, l) => sum + l.quantity * l.unitPrice, 0);
+  // A loyalty redemption is a cart-level idea (not tied to one product),
+  // but the schema only carries a discount per line — deliberately simpler
+  // for now, see CLAUDE.md's plan. Applied here to whichever line currently
+  // has the most room to absorb it, so redeeming points doesn't get
+  // silently clamped away on a small cart line.
+  function applyRedeemedDiscount(discountAmount: number) {
+    setCart((prev) => {
+      if (prev.length === 0) return prev; // guarded upstream in CustomerPanel; defensive no-op here
+      let target = prev[0];
+      let mostRoom = -Infinity;
+      for (const l of prev) {
+        const room = l.quantity * l.unitPrice - l.discountAmount;
+        if (room > mostRoom) {
+          mostRoom = room;
+          target = l;
+        }
+      }
+      return prev.map((l) =>
+        l.lotId === target.lotId ? { ...l, discountAmount: l.discountAmount + discountAmount } : l
+      );
+    });
+  }
+
+  const subtotal = cart.reduce((sum, l) => sum + Math.max(0, l.quantity * l.unitPrice - l.discountAmount), 0);
   const taxAmount = subtotal * (taxRatePercent / 100);
   const total = subtotal + taxAmount;
   const totalThcMg = cart.reduce((sum, l) => sum + (thcMgForLine(l) ?? 0), 0);
@@ -111,15 +149,17 @@ export function RegisterPanel() {
     startTransition(async () => {
       try {
         const sale = await checkoutAction(
-          cart.map((l) => ({ lotId: l.lotId, quantity: l.quantity })),
+          cart.map((l) => ({ lotId: l.lotId, quantity: l.quantity, discountAmount: l.discountAmount })),
           tenderType,
           taxRatePercent,
           orderType,
-          customerName
+          customerName,
+          customer?.id
         );
         setReceipt(sale);
         setCart([]);
         setCustomerName("");
+        setCustomer(null);
         router.refresh();
       } catch (err) {
         setError(err instanceof Error ? err.message : "Couldn't complete the sale.");
@@ -157,7 +197,14 @@ export function RegisterPanel() {
                 <span>
                   {li.productName} × {li.quantity} {li.unit}
                 </span>
-                <span>{money(li.lineTotal)}</span>
+                <span>
+                  {li.discountAmount > 0 && (
+                    <span className="text-gray-400 line-through mr-1">
+                      {money(li.quantity * li.unitPrice)}
+                    </span>
+                  )}
+                  {money(li.lineTotal)}
+                </span>
               </div>
             ))}
           </div>
@@ -212,38 +259,69 @@ export function RegisterPanel() {
 
       {error && <p className="text-xs text-red-600">{error}</p>}
 
+      <CustomerPanel
+        selected={customer}
+        dailyPurchaseLimitOz={dailyPurchaseLimitOz}
+        cartIsEmpty={cart.length === 0}
+        onSelect={setCustomer}
+        onClear={() => setCustomer(null)}
+        onDiscountFromRedeem={applyRedeemedDiscount}
+      />
+
       {cart.length === 0 ? (
         <p className="text-xs text-gray-400">Cart is empty — scan an item to begin.</p>
       ) : (
         <div className="space-y-2">
           {cart.map((line) => {
             const lineMg = thcMgForLine(line);
+            const lineGross = line.quantity * line.unitPrice;
+            const lineNet = Math.max(0, lineGross - line.discountAmount);
             return (
               <div
                 key={line.lotId}
-                className="flex items-center justify-between bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg p-2 text-xs"
+                className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg p-2 text-xs space-y-1.5"
               >
-                <div>
-                  <p className="font-medium text-gray-900 dark:text-gray-100">{line.productName}</p>
-                  <p className="text-gray-400">
-                    {money(line.unitPrice)} / {line.unit}
-                    {lineMg !== null && ` · ≈${lineMg.toFixed(0)}mg THC`}
-                  </p>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-medium text-gray-900 dark:text-gray-100">{line.productName}</p>
+                    <p className="text-gray-400">
+                      {money(line.unitPrice)} / {line.unit}
+                      {lineMg !== null && ` · ≈${lineMg.toFixed(0)}mg THC`}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min="0.01"
+                      step="0.01"
+                      max={line.quantityRemaining}
+                      value={line.quantity}
+                      onChange={(e) => updateQuantity(line.lotId, Number(e.target.value))}
+                      className="w-16 border border-gray-300 dark:border-gray-700 rounded px-1 py-1 bg-transparent text-right"
+                    />
+                    <span className="w-16 text-right">
+                      {line.discountAmount > 0 && (
+                        <span className="text-gray-400 line-through mr-1">{money(lineGross)}</span>
+                      )}
+                      {money(lineNet)}
+                    </span>
+                    <button onClick={() => removeLine(line.lotId)} className="text-red-500 px-1">
+                      ×
+                    </button>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center justify-end gap-1.5 text-gray-400">
+                  <label htmlFor={`discount-${line.lotId}`}>Discount $</label>
                   <input
+                    id={`discount-${line.lotId}`}
                     type="number"
-                    min="0.01"
+                    min="0"
                     step="0.01"
-                    max={line.quantityRemaining}
-                    value={line.quantity}
-                    onChange={(e) => updateQuantity(line.lotId, Number(e.target.value))}
+                    value={line.discountAmount || ""}
+                    onChange={(e) => updateDiscount(line.lotId, Number(e.target.value))}
+                    placeholder="0.00"
                     className="w-16 border border-gray-300 dark:border-gray-700 rounded px-1 py-1 bg-transparent text-right"
                   />
-                  <span className="w-16 text-right">{money(line.quantity * line.unitPrice)}</span>
-                  <button onClick={() => removeLine(line.lotId)} className="text-red-500 px-1">
-                    ×
-                  </button>
                 </div>
               </div>
             );

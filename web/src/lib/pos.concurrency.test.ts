@@ -12,22 +12,28 @@ import { createSale } from "@/lib/pos";
 
 let retailerId: string | null = null;
 let lotId: string | null = null;
+let customerId: string | null = null;
 
 afterEach(async () => {
   if (lotId) {
     await prisma.saleLineItem.deleteMany({ where: { inventoryLotId: lotId } });
     await prisma.inventoryLot.deleteMany({ where: { id: lotId } });
   }
+  if (customerId) {
+    await prisma.loyaltyLedgerEntry.deleteMany({ where: { customerId } });
+  }
   if (retailerId) {
     await prisma.sale.deleteMany({ where: { retailerId } });
+    await prisma.customer.deleteMany({ where: { retailerId } });
     await prisma.saleCounter.deleteMany({ where: { retailerId } });
     await prisma.user.deleteMany({ where: { id: retailerId } });
   }
   retailerId = null;
   lotId = null;
+  customerId = null;
 });
 
-async function makeRetailerWithLot(quantityRemaining: number) {
+async function makeRetailerWithLot(quantityRemaining: number, loyaltyPointsPerDollar?: number) {
   const retailer = await prisma.user.create({
     data: {
       role: "retailer",
@@ -36,6 +42,7 @@ async function makeRetailerWithLot(quantityRemaining: number) {
       fullName: "Concurrency Test Retailer",
       anonHandle: `Test Retailer #${crypto.randomUUID().slice(0, 6)}`,
       licenseVerification: "approved",
+      loyaltyPointsPerDollar: loyaltyPointsPerDollar ?? null,
     },
   });
   const lot = await prisma.inventoryLot.create({
@@ -108,5 +115,48 @@ describe("createSale concurrency", () => {
     expect(saleNumbers).toHaveLength(STOCK);
     // No duplicates, no gaps — exactly 1..STOCK.
     expect(saleNumbers).toEqual(Array.from({ length: STOCK }, (_, i) => i + 1));
+  });
+
+  it("accrues loyalty points correctly under concurrent sales for the same customer", async () => {
+    // Matches the sale-numbering test's already-proven concurrency level.
+    // A higher ATTEMPTS here (tried 15) hit a real but unrelated ceiling:
+    // Prisma Client's own connection pool in this dev environment (5
+    // connections — separate from Supabase's server-side PgBouncer pooling)
+    // ran out before every transaction could even start, surfacing as a
+    // "Timed out fetching a new connection from the connection pool" error
+    // rather than any loyalty-accrual bug. That's a real, worth-knowing
+    // constraint of this environment — the local load test (Phase 4) is
+    // where raw-throughput ceilings like this belong, not this test, whose
+    // job is proving no lost updates, not finding the pool's exact limit.
+    const ATTEMPTS = 8;
+    const POINTS_PER_DOLLAR = 3;
+    const { retailer, lot } = await makeRetailerWithLot(ATTEMPTS, POINTS_PER_DOLLAR);
+    const customer = await prisma.customer.create({
+      data: {
+        retailerId: retailer.id,
+        name: "Concurrency Test Customer",
+        phone: `555${Math.floor(Math.random() * 10_000_000)}`,
+      },
+    });
+    customerId = customer.id;
+
+    // Every attempt buys 1 lb at $150 -> 450 points each. A plain Prisma
+    // `increment` (not a guarded updateMany, see lib/pos.ts's comment on
+    // why that's still safe here) is what's actually under test — this
+    // proves Postgres's row-level lock on the UPDATE serializes concurrent
+    // accrual correctly, with no lost updates.
+    const results = await Promise.allSettled(
+      Array.from({ length: ATTEMPTS }, () =>
+        createSale(retailer.id, [{ lotId: lot.id, quantity: 1 }], "cash", 0, "in_store", undefined, customer.id)
+      )
+    );
+    const succeeded = results.filter((r) => r.status === "fulfilled");
+    expect(succeeded).toHaveLength(ATTEMPTS); // enough stock for every attempt to win
+
+    const finalCustomer = await prisma.customer.findUniqueOrThrow({ where: { id: customer.id } });
+    expect(finalCustomer.loyaltyPointsBalance).toBe(ATTEMPTS * 150 * POINTS_PER_DOLLAR);
+
+    const ledger = await prisma.loyaltyLedgerEntry.findMany({ where: { customerId: customer.id } });
+    expect(ledger).toHaveLength(ATTEMPTS); // one accrual entry per sale, none lost
   });
 });

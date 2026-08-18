@@ -2,7 +2,14 @@ import { requireRole } from "@/lib/dal";
 import { PortalShell } from "@/components/portal-shell";
 import { MetrcSettings } from "@/components/metrc-settings";
 import { prisma } from "@/lib/prisma";
-import { connectMetrcAction, disconnectMetrcAction, setDefaultMarkupAction, setStorefrontSlugAction } from "./actions";
+import {
+  connectMetrcAction,
+  disconnectMetrcAction,
+  setDefaultMarkupAction,
+  setStorefrontSlugAction,
+  setLoyaltySettingsAction,
+  setDailyPurchaseLimitAction,
+} from "./actions";
 
 const NAV = [
   { href: "/retailer", label: "Browse inventory" },
@@ -22,7 +29,12 @@ export default async function RetailerSettingsPage({
   const { error } = await searchParams;
   const user = await prisma.user.findUnique({
     where: { id: session.user.id },
-    select: { defaultMarkupPercent: true, storefrontSlug: true },
+    select: {
+      defaultMarkupPercent: true,
+      storefrontSlug: true,
+      loyaltyPointsPerDollar: true,
+      dailyPurchaseLimitOz: true,
+    },
   });
 
   return (
@@ -90,6 +102,55 @@ export default async function RetailerSettingsPage({
               Save
             </button>
           </form>
+        </div>
+
+        <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-4 space-y-3 max-w-md">
+          <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+            Register customer panel
+          </h2>
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            Both are plain editable numbers, not certified figures — same posture as everything
+            else priced or limited in this app.
+          </p>
+          <form action={setLoyaltySettingsAction} className="flex items-center gap-2">
+            <label className="text-xs text-gray-500 dark:text-gray-400 w-40 shrink-0">
+              Loyalty points per $1 spent
+            </label>
+            <input
+              name="loyaltyPointsPerDollar"
+              type="number"
+              step="0.1"
+              min="0"
+              defaultValue={user?.loyaltyPointsPerDollar ?? ""}
+              placeholder="e.g. 1 (blank = off)"
+              className="w-32 border border-gray-300 dark:border-gray-700 rounded-lg px-2 py-1.5 text-xs bg-transparent"
+            />
+            <button type="submit" className="bg-green-700 text-white rounded-lg px-3 py-1.5 text-xs font-medium">
+              Save
+            </button>
+          </form>
+          <form action={setDailyPurchaseLimitAction} className="flex items-center gap-2">
+            <label className="text-xs text-gray-500 dark:text-gray-400 w-40 shrink-0">
+              Daily flower purchase limit
+            </label>
+            <input
+              name="dailyPurchaseLimitOz"
+              type="number"
+              step="0.1"
+              min="0.1"
+              defaultValue={user?.dailyPurchaseLimitOz ?? ""}
+              placeholder="e.g. 2.5 (blank = off)"
+              className="w-32 border border-gray-300 dark:border-gray-700 rounded-lg px-2 py-1.5 text-xs bg-transparent"
+            />
+            <span className="text-xs text-gray-400">oz</span>
+            <button type="submit" className="bg-green-700 text-white rounded-lg px-3 py-1.5 text-xs font-medium">
+              Save
+            </button>
+          </form>
+          <p className="text-xs text-gray-400">
+            The purchase-limit bar only tracks flower/pre-roll sold by weight, and only once a
+            customer is attached to the sale — it isn&apos;t a certified compliance check.
+          </p>
         </div>
       </div>
     </PortalShell>

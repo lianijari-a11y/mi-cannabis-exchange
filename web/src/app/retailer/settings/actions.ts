@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireRole } from "@/lib/dal";
 import { connectMetrc, disconnectMetrc } from "@/lib/metrc-integration";
-import { setDefaultMarkupPercent, setStorefrontSlug } from "@/lib/pos";
+import { setDefaultMarkupPercent, setStorefrontSlug, setLoyaltySettings, setDailyPurchaseLimitOz } from "@/lib/pos";
 
 export async function connectMetrcAction(formData: FormData) {
   const session = await requireRole("retailer");
@@ -22,6 +22,20 @@ export async function setDefaultMarkupAction(formData: FormData) {
   const session = await requireRole("retailer");
   const raw = String(formData.get("defaultMarkupPercent") ?? "").trim();
   await setDefaultMarkupPercent(session.user.id, raw ? Number(raw) : null);
+  revalidatePath("/retailer/settings");
+}
+
+export async function setLoyaltySettingsAction(formData: FormData) {
+  const session = await requireRole("retailer");
+  const raw = String(formData.get("loyaltyPointsPerDollar") ?? "").trim();
+  await setLoyaltySettings(session.user.id, raw ? Number(raw) : null);
+  revalidatePath("/retailer/settings");
+}
+
+export async function setDailyPurchaseLimitAction(formData: FormData) {
+  const session = await requireRole("retailer");
+  const raw = String(formData.get("dailyPurchaseLimitOz") ?? "").trim();
+  await setDailyPurchaseLimitOz(session.user.id, raw ? Number(raw) : null);
   revalidatePath("/retailer/settings");
 }
 

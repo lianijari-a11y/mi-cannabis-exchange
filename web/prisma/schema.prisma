@@ -74,6 +74,18 @@ model User {
   // for role = retailer.
   storefrontSlug String? @unique
 
+  // Register customer/loyalty features — both plain editable numbers, not
+  // certified lookups, same posture as the tax-rate field on Sale. Only
+  // meaningful for role = retailer.
+  // - loyaltyPointsPerDollar: points accrued per $1 of a completed sale
+  //   (null/0 means loyalty accrual is off for this retailer).
+  // - dailyPurchaseLimitOz: the flower-equivalent daily purchase limit shown
+  //   on the register's purchase-limit bar — see lib/customers.ts's
+  //   todaysFlowerEquivalentOz for what "flower-equivalent" does and does
+  //   not cover.
+  loyaltyPointsPerDollar Float?
+  dailyPurchaseLimitOz   Float?
+
   // Stable anonymous handle shown to the counterparty across the blind
   // marketplace boundary, e.g. "Grower #A17". Generated once at signup,
   // never derived from the real name so it can't leak identity. Transporters
@@ -108,6 +120,7 @@ model User {
   inventoryLots              InventoryLot[]
   sales                      Sale[]
   saleCounter                SaleCounter?
+  customers                  Customer[]
   ordersReceived             Order[]
   smsConnection              SmsConnection?
   marketingMessages          MarketingMessage[]
@@ -818,6 +831,14 @@ model InventoryLot {
 
   status String @default("active")
 
+  // Set once, the first time this lot's quantityRemaining crosses below the
+  // low-stock threshold (lib/pos.ts's checkAndNotifyLowStock) — guards
+  // against re-notifying every Account Executive on every subsequent sale
+  // of an already-flagged lot. Never reset: a lot only ever decreases in
+  // this app (no restock-in-place flow, a fresh intake creates a new lot),
+  // so once flagged, staying flagged is correct.
+  lowStockNotifiedAt DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -851,10 +872,16 @@ model Sale {
   // Added for the checkout-flexibility quick win (CLAUDE.md §24) — not a
   // customer-accounts/loyalty system, just what the register captures at
   // the moment of sale. orderType: "in_store" | "pickup" | "curbside".
-  // customerName is free text, receipt-only, never used to look up or
-  // re-identify a past sale.
+  // customerName stays a free-text, receipt-time snapshot — it is never
+  // re-derived from Customer.name, so editing a customer's name later never
+  // silently rewrites a past receipt. customerId (below) is the newer,
+  // separate link that actually enables cross-visit purchase history —
+  // optional, since a walk-in with no phone on file has no Customer at all.
   orderType    String  @default("in_store")
   customerName String?
+
+  customerId String?
+  customer   Customer? @relation(fields: [customerId], references: [id])
 
   status String @default("completed")
 
@@ -870,9 +897,11 @@ model Sale {
 
   lineItems SaleLineItem[]
   order     Order?
+  loyaltyLedgerEntries LoyaltyLedgerEntry[]
 
   @@unique([retailerId, saleNumber])
   @@index([retailerId, status])
+  @@index([customerId])
   @@map("sales")
 }
 
@@ -888,6 +917,62 @@ model SaleCounter {
   value      Int    @default(0)
 
   @@map("sale_counters")
+}
+
+// A retailer's own recognized repeat customer at the register — a deliberate
+// reversal of this app's prior "receipt-only, never re-identify" stance for
+// Sale.customerName (confirmed with the human before building, since it's a
+// real privacy/architecture decision, not a quiet default). No password, no
+// login, no online account — phone number is simply the lookup key a
+// budtender types in to recognize "this is the same person as last visit".
+// Scoped per retailer like every other retailer-owned record in this app —
+// a customer at one dispensary is invisible to another, no cross-retailer
+// sharing, no platform-wide customer graph.
+model Customer {
+  id         String @id @default(cuid())
+  retailerId String
+  retailer   User   @relation(fields: [retailerId], references: [id])
+
+  name  String
+  phone String // normalized (digits only) before matching/storing
+  notes String? // free text, e.g. "loves flower, allergic to citrus terpenes"
+
+  // Simple running balance, kept correct by createSale's own atomically
+  // guarded increment (same discipline as InventoryLot.quantityRemaining's
+  // decrement) — never read-then-written outside a transaction. The real
+  // history lives in LoyaltyLedgerEntry below; this is a cached total.
+  loyaltyPointsBalance Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sales          Sale[]
+  loyaltyEntries LoyaltyLedgerEntry[]
+
+  @@unique([retailerId, phone])
+  @@index([retailerId])
+  @@map("customers")
+}
+
+// Every loyalty accrual (+points, tied to the Sale that earned them) and
+// redemption (-points, tied to the discount it funded) is a real logged
+// row — same "log every event" convention as SalesRepCommission/
+// MarketingMessage/ShipmentEvent elsewhere in this app, rather than just
+// mutating Customer.loyaltyPointsBalance with no trail.
+model LoyaltyLedgerEntry {
+  id         String   @id @default(cuid())
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id])
+  saleId     String? // set for accrual entries, null for a standalone redemption
+  sale       Sale?    @relation(fields: [saleId], references: [id])
+
+  points Int // positive = accrual, negative = redemption
+  reason String // e.g. "Earned on sale #42" / "Redeemed for $5.00 off"
+
+  createdAt DateTime @default(now())
+
+  @@index([customerId])
+  @@map("loyalty_ledger_entries")
 }
 
 // ---------- Customer order-ahead / pickup (added 2026-08-17) ----------
@@ -1004,6 +1089,14 @@ model SaleLineItem {
   quantity  Float
   unitPrice Float // snapshot of retailPricePerUnit at time of sale
   lineTotal Float
+
+  // Manual, register-entered discount (flat $, not a %) — lineTotal is
+  // already the net amount actually charged (quantity*unitPrice minus this),
+  // so discountAmount only exists to let the receipt/register show the
+  // struck-through original price. Not an auto-apply/stacking rules engine —
+  // deliberately simpler, same scope-cut posture as SplitContract/
+  // ProductRejection elsewhere in this app.
+  discountAmount Float @default(0)
 
   @@index([saleId])
   @@map("sale_line_items")

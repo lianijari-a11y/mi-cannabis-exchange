@@ -118,3 +118,9 @@ export function roleHome(role: string): string {
       return "/login";
   }
 }
+
+// Shared between the retailer's own Inventory panel (the "Running low —
+// shop Cannabliz for more" self-service link, CLAUDE.md §28) and the
+// Account Executive low-stock notification (lib/pos.ts) — one threshold,
+// not two magic numbers that could drift apart.
+export const LOW_STOCK_THRESHOLD = 0.2;

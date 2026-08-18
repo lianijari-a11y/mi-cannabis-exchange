@@ -1,12 +1,12 @@
 import Link from "next/link";
 import { updateMarkupAction, voidLotAction } from "@/app/retailer/pos/actions";
 import { BarcodeLabel } from "./barcode-label";
+import { LOW_STOCK_THRESHOLD } from "@/lib/constants";
 
 // Below this share of original stock, nudge the retailer to go reorder from
 // the Cannabliz wholesale feed — see CLAUDE.md §28. Deliberately just a
 // link into the existing Retailer browse/search flow, not a new reorder
 // mechanism: /retailer already supports ?q= (lib/retailer search).
-const LOW_STOCK_THRESHOLD = 0.2;
 
 type Lot = {
   id: string;

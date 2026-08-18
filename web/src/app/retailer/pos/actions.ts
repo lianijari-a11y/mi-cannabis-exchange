@@ -14,6 +14,13 @@ import {
   fulfillOrder,
 } from "@/lib/pos";
 import { connectSms, disconnectSms, sendSpecialsMessage } from "@/lib/marketing-sms";
+import {
+  findOrCreateCustomer,
+  lookupCustomerByPhone,
+  customerPurchaseHabits,
+  todaysPurchaseTotals,
+  redeemLoyaltyPoints,
+} from "@/lib/customers";
 
 export async function intakeAction(formData: FormData) {
   const session = await requireRole("retailer");
@@ -73,14 +80,23 @@ export async function lookupSkuAction(sku: string) {
 }
 
 export async function checkoutAction(
-  lines: { lotId: string; quantity: number }[],
+  lines: { lotId: string; quantity: number; discountAmount?: number }[],
   tenderType: "cash" | "card" | "other",
   taxRatePercent: number,
   orderType: "in_store" | "pickup" | "curbside",
-  customerName?: string
+  customerName?: string,
+  customerId?: string
 ) {
   const session = await requireRole("retailer");
-  const sale = await createSale(session.user.id, lines, tenderType, taxRatePercent, orderType, customerName);
+  const sale = await createSale(
+    session.user.id,
+    lines,
+    tenderType,
+    taxRatePercent,
+    orderType,
+    customerName,
+    customerId
+  );
   revalidatePath("/retailer/pos");
   return {
     id: sale.id,
@@ -97,9 +113,48 @@ export async function checkoutAction(
       quantity: li.quantity,
       unit: li.inventoryLot.unit,
       unitPrice: li.unitPrice,
+      discountAmount: li.discountAmount,
       lineTotal: li.lineTotal,
     })),
   };
+}
+
+// Called directly from the Register/CustomerPanel client components, same
+// convention as lookupSkuAction — plain serializable args/return, not a
+// <form> action.
+async function serializedCustomer(customer: { id: string; name: string; phone: string; notes: string | null; loyaltyPointsBalance: number }) {
+  const [habits, purchaseTotals] = await Promise.all([
+    customerPurchaseHabits(customer.id),
+    todaysPurchaseTotals(customer.id),
+  ]);
+  return {
+    id: customer.id,
+    name: customer.name,
+    phone: customer.phone,
+    notes: customer.notes,
+    loyaltyPointsBalance: customer.loyaltyPointsBalance,
+    habits: habits ? { ...habits, lastSaleAt: habits.lastSaleAt.toISOString() } : null,
+    purchaseTotals,
+  };
+}
+
+export async function lookupCustomerAction(phone: string) {
+  const session = await requireRole("retailer");
+  const customer = await lookupCustomerByPhone(session.user.id, phone);
+  if (!customer) return null;
+  return serializedCustomer(customer);
+}
+
+export async function saveCustomerAction(name: string, phone: string, notes?: string) {
+  const session = await requireRole("retailer");
+  const customer = await findOrCreateCustomer(session.user.id, name, phone, notes);
+  revalidatePath("/retailer/pos");
+  return serializedCustomer(customer);
+}
+
+export async function redeemLoyaltyPointsAction(customerId: string, points: number) {
+  const session = await requireRole("retailer");
+  return redeemLoyaltyPoints(session.user.id, customerId, points);
 }
 
 // Called directly from OrdersPanel (client component), same convention as

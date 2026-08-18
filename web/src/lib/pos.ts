@@ -4,6 +4,8 @@ import { after } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { submitSaleToMetrc } from "@/lib/metrc-integration";
+import { notify } from "@/lib/notifications";
+import { CATEGORY_LABELS, LOW_STOCK_THRESHOLD, type Category } from "@/lib/constants";
 
 // Retailer Point of Sale — see CLAUDE.md §23. This is the first place in
 // the app that models an actual retail sale/inventory-on-hand, distinct
@@ -48,6 +50,20 @@ export async function setStorefrontSlug(retailerId: string, slug: string) {
 export async function setDefaultMarkupPercent(retailerId: string, markupPercent: number | null) {
   if (markupPercent !== null && markupPercent < 0) throw new Error("Markup can't be negative.");
   await prisma.user.update({ where: { id: retailerId }, data: { defaultMarkupPercent: markupPercent } });
+}
+
+// Register customer panel settings — both plain editable numbers, not
+// certified lookups, same posture as defaultMarkupPercent above and the
+// tax-rate field on Sale. See lib/customers.ts for what these actually
+// drive (loyalty accrual rate, the purchase-limit bar).
+export async function setLoyaltySettings(retailerId: string, pointsPerDollar: number | null) {
+  if (pointsPerDollar !== null && pointsPerDollar < 0) throw new Error("Points per dollar can't be negative.");
+  await prisma.user.update({ where: { id: retailerId }, data: { loyaltyPointsPerDollar: pointsPerDollar } });
+}
+
+export async function setDailyPurchaseLimitOz(retailerId: string, limitOz: number | null) {
+  if (limitOz !== null && limitOz <= 0) throw new Error("Purchase limit must be a positive number.");
+  await prisma.user.update({ where: { id: retailerId }, data: { dailyPurchaseLimitOz: limitOz } });
 }
 
 export async function availableDealsForIntake(retailerId: string) {
@@ -158,15 +174,32 @@ export async function salesHistoryForRetailer(retailerId: string) {
 // failure never unwinds or blocks the sale that already rang up.
 export async function createSale(
   retailerId: string,
-  lines: { lotId: string; quantity: number }[],
+  lines: { lotId: string; quantity: number; discountAmount?: number }[],
   tenderType: "cash" | "card" | "other",
   taxRatePercent: number,
   orderType: "in_store" | "pickup" | "curbside" = "in_store",
-  customerName?: string
+  customerName?: string,
+  customerId?: string
 ) {
   if (lines.length === 0) throw new Error("Cart is empty.");
 
+  // Populated inside the transaction below, consumed by the after() block
+  // once it commits — see the low-stock notification comment further down.
+  const newlyLowStockLots: { productName: string; category: string }[] = [];
+
+  // Read-only, doesn't need to be inside the transaction — a retailer's
+  // loyalty rate is a rarely-changed setting, not something this specific
+  // sale needs point-in-time isolation against.
+  const retailerSettings = customerId
+    ? await prisma.user.findUnique({ where: { id: retailerId }, select: { loyaltyPointsPerDollar: true } })
+    : null;
+
   const sale = await prisma.$transaction(async (tx) => {
+    if (customerId) {
+      const customer = await tx.customer.findUnique({ where: { id: customerId } });
+      if (!customer || customer.retailerId !== retailerId) throw new Error("Not authorized for this customer.");
+    }
+
     const lots = await tx.inventoryLot.findMany({
       where: { id: { in: lines.map((l) => l.lotId) }, retailerId, status: "active" },
     });
@@ -180,12 +213,15 @@ export async function createSale(
       if (line.quantity > lot.quantityRemaining) {
         throw new Error(`Only ${lot.quantityRemaining} ${lot.unit} of ${lot.productName} left.`);
       }
-      const lineTotal = line.quantity * lot.retailPricePerUnit;
+      const grossLineTotal = line.quantity * lot.retailPricePerUnit;
+      const discountAmount = Math.max(0, Math.min(line.discountAmount ?? 0, grossLineTotal));
+      const lineTotal = grossLineTotal - discountAmount;
       subtotal += lineTotal;
       return {
         inventoryLotId: lot.id,
         quantity: line.quantity,
         unitPrice: lot.retailPricePerUnit,
+        discountAmount,
         lineTotal,
       };
     });
@@ -217,6 +253,7 @@ export async function createSale(
         tenderType,
         orderType,
         customerName: customerName?.trim() || null,
+        customerId: customerId || null,
         lineItems: { create: lineData },
       },
       include: { lineItems: { include: { inventoryLot: true } } },
@@ -243,6 +280,48 @@ export async function createSale(
         where: { id: lot.id, quantityRemaining: { lte: 0 } },
         data: { status: "depleted" },
       });
+
+      // Account Executive low-stock notification (CLAUDE.md's low-stock
+      // notification plan). The claim itself is atomically guarded the same
+      // way the decrement above is — `lowStockNotifiedAt: null` in the WHERE
+      // clause means only the one transaction that actually wins the race to
+      // cross the threshold gets count===1 and queues the notification;
+      // every other concurrent sale against this lot sees count===0 and
+      // stays silent, so Account Executives get exactly one notification
+      // per lot, not one per sale.
+      const remainingAfter = lot.quantityRemaining - line.quantity;
+      if (remainingAfter / lot.quantityReceived <= LOW_STOCK_THRESHOLD) {
+        const claimed = await tx.inventoryLot.updateMany({
+          where: { id: lot.id, lowStockNotifiedAt: null },
+          data: { lowStockNotifiedAt: new Date() },
+        });
+        if (claimed.count === 1) {
+          newlyLowStockLots.push({ productName: lot.productName, category: lot.category });
+        }
+      }
+    }
+
+    // Loyalty accrual — a plain Prisma `increment` (not a guarded
+    // updateMany) is already safe here: unlike the stock decrement above,
+    // there's no "insufficient balance" failure mode for adding points, so
+    // Postgres's own row-level lock on the UPDATE is sufficient for
+    // correctness under concurrent sales for the same customer.
+    if (customerId && retailerSettings?.loyaltyPointsPerDollar) {
+      const pointsEarned = Math.floor(total * retailerSettings.loyaltyPointsPerDollar);
+      if (pointsEarned > 0) {
+        await tx.customer.update({
+          where: { id: customerId },
+          data: { loyaltyPointsBalance: { increment: pointsEarned } },
+        });
+        await tx.loyaltyLedgerEntry.create({
+          data: {
+            customerId,
+            saleId: created.id,
+            points: pointsEarned,
+            reason: `Earned on sale #${created.saleNumber}`,
+          },
+        });
+      }
     }
 
     return created;
@@ -279,6 +358,31 @@ export async function createSale(
     }
   });
 
+  // Account Executive low-stock notification — confirmed with the human as
+  // a deliberate, new cross-role visibility grant (retailer real identity +
+  // specific product), not a quiet default: no role besides the retailer
+  // itself previously saw a retailer's real identity or POS inventory
+  // levels. Platform-wide to every Account Executive, matching how that
+  // role's visibility already works everywhere else in this app (same
+  // trust tier as Broker — see CLAUDE.md §13) rather than inventing a
+  // per-retailer AE assignment concept that doesn't exist yet. Off the
+  // critical path for the same reason METRC submission is — this is a
+  // notify-only side effect, not something checkout should wait on.
+  if (newlyLowStockLots.length > 0) {
+    after(async () => {
+      const [retailer, accountExecutives] = await Promise.all([
+        prisma.user.findUnique({ where: { id: retailerId }, select: { businessName: true, fullName: true } }),
+        prisma.user.findMany({ where: { role: "sales_rep" }, select: { id: true } }),
+      ]);
+      const retailerName = retailer?.businessName || retailer?.fullName || "A retailer";
+      for (const lot of newlyLowStockLots) {
+        const categoryLabel = CATEGORY_LABELS[lot.category as Category] ?? lot.category;
+        const message = `${retailerName} is running low on ${lot.productName} (${categoryLabel}) — consider offering a matching listing.`;
+        await Promise.all(accountExecutives.map((ae) => notify(ae.id, "low_stock", message)));
+      }
+    });
+  }
+
   return sale;
 }
 
@@ -300,6 +404,34 @@ export async function voidSale(saleId: string, retailerId: string) {
           status: "active",
         },
       });
+    }
+
+    // Claw back whatever loyalty points this sale accrued — symmetric with
+    // the inventory restock above. Clamped at 0 rather than blocked: if the
+    // customer already redeemed those points elsewhere, voiding the sale
+    // shouldn't be prevented by that, so the balance just can't go negative.
+    if (sale.customerId) {
+      const accrual = await tx.loyaltyLedgerEntry.findFirst({ where: { saleId } });
+      if (accrual && accrual.points > 0) {
+        const customer = await tx.customer.findUnique({ where: { id: sale.customerId } });
+        if (customer) {
+          const clawback = Math.min(accrual.points, customer.loyaltyPointsBalance);
+          if (clawback > 0) {
+            await tx.customer.update({
+              where: { id: sale.customerId },
+              data: { loyaltyPointsBalance: { decrement: clawback } },
+            });
+            await tx.loyaltyLedgerEntry.create({
+              data: {
+                customerId: sale.customerId,
+                saleId,
+                points: -clawback,
+                reason: `Reversed — sale #${sale.saleNumber} voided`,
+              },
+            });
+          }
+        }
+      }
     }
   });
 }

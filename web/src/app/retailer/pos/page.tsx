@@ -57,7 +57,10 @@ export default async function RetailerPosPage() {
       activeInventoryForRetailer(session.user.id),
       salesHistoryForRetailer(session.user.id),
       pendingOrdersForRetailer(session.user.id),
-      prisma.user.findUnique({ where: { id: session.user.id }, select: { defaultMarkupPercent: true } }),
+      prisma.user.findUnique({
+        where: { id: session.user.id },
+        select: { defaultMarkupPercent: true, dailyPurchaseLimitOz: true },
+      }),
       metrcConnectionFor(session.user.id),
       smsConnectionFor(session.user.id),
       optedInCustomerCount(session.user.id),
@@ -85,7 +88,7 @@ export default async function RetailerPosPage() {
       </div>
 
       <PosTabs
-        register={<RegisterPanel />}
+        register={<RegisterPanel dailyPurchaseLimitOz={user?.dailyPurchaseLimitOz ?? null} />}
         orders={<OrdersPanel orders={orders} />}
         intake={<IntakePanel deals={deals} defaultMarkupPercent={user?.defaultMarkupPercent ?? null} />}
         inventory={<InventoryPanel lots={lots} />}
