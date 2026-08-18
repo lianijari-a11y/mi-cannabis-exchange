@@ -2,6 +2,7 @@
 
 import { AuthError } from "next-auth";
 import { signIn } from "@/auth";
+import { safeRedirect } from "@/lib/safe-redirect";
 
 export type LoginState = { error?: string; email?: string } | undefined;
 
@@ -13,7 +14,7 @@ export async function login(_prevState: LoginState, formData: FormData): Promise
     await signIn("credentials", {
       email,
       password: formData.get("password"),
-      redirectTo: callbackUrl || "/",
+      redirectTo: safeRedirect(callbackUrl, "/"),
     });
   } catch (err) {
     if (err instanceof AuthError) {

@@ -201,4 +201,34 @@ export async function getListingAnonymized(listingId: string, retailerId: string
   });
 }
 
+// Public, no-session listing view for shareable links (CLAUDE.md §36) — a
+// deliberate, confirmed loosening of "you must already be a logged-in
+// verified Retailer to see anything." Same anonymization select as
+// getListingAnonymized above (never the real seller identity), but with two
+// differences: no retailerId to scope against, and exclusive listings are
+// excluded outright rather than gated — a public link bypassing
+// Admin-restricted distribution would defeat the point of that feature, so
+// `visibility: "all"` is a hard requirement here, not a fallback branch.
+export async function publicListingView(listingId: string) {
+  await expireStaleListings();
+  return prisma.listing.findFirst({
+    where: { id: listingId, status: "active", visibility: "all" },
+    select: {
+      id: true,
+      strainName: true,
+      category: true,
+      thcPercent: true,
+      quantity: true,
+      unit: true,
+      pricePerUnit: true,
+      terms: true,
+      notes: true,
+      status: true,
+      expiresAt: true,
+      media: true,
+      postedBy: { select: { anonHandle: true } },
+    },
+  });
+}
+
 export { generateAnonHandle };

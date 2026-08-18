@@ -2,6 +2,7 @@ import { requireRole } from "@/lib/dal";
 import { PortalShell } from "@/components/portal-shell";
 import { allListingsForAdmin, retailersForPicker } from "@/lib/admin";
 import { ListingVisibilityForm } from "@/components/admin/listing-visibility-form";
+import { ShareListingLink } from "@/components/seller/share-listing-link";
 import { CATEGORY_LABELS, type Category } from "@/lib/constants";
 import { updateListingVisibility } from "./actions";
 
@@ -57,6 +58,7 @@ export default async function AdminListingsPage() {
               retailers={retailers}
               action={updateListingVisibility}
             />
+            {l.status === "active" && l.visibility === "all" && <ShareListingLink listingId={l.id} />}
           </div>
         ))}
         {listings.length === 0 && <p className="text-sm text-gray-500 dark:text-gray-400">No listings yet.</p>}

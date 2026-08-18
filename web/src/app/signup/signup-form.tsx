@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { signup } from "./actions";
 
 // Broker and Sales Rep are intentionally not offered here — see the
@@ -32,7 +33,16 @@ type LicenseLookupResult = {
 
 export function SignupForm() {
   const [state, formAction, pending] = useActionState(signup, undefined);
-  const [role, setRole] = useState<string>("grower");
+  const searchParams = useSearchParams();
+  // A shared listing link (CLAUDE.md §36) sends a would-be Retailer here
+  // with ?role=retailer&callbackUrl=/listing/[id]/respond?... so they land
+  // pre-selected on the right account type and return to finish the action
+  // they clicked, instead of the generic Retailer dashboard.
+  const requestedRole = searchParams.get("role");
+  const callbackUrl = searchParams.get("callbackUrl");
+  const [role, setRole] = useState<string>(
+    ROLE_OPTIONS.some((o) => o.value === requestedRole) ? requestedRole! : "grower"
+  );
   const licensed = LICENSED_ROLES.has(role);
   const needsAddress = ADDRESS_ROLES.has(role);
 
@@ -71,6 +81,7 @@ export function SignupForm() {
 
   return (
     <form action={formAction} className="space-y-3">
+      {callbackUrl && <input type="hidden" name="callbackUrl" value={callbackUrl} />}
       <div>
         <label className={labelClass} htmlFor="role">
           Account type

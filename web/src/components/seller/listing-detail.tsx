@@ -7,6 +7,7 @@ import { splitContractsForListing } from "@/lib/split-contracts";
 import { CATEGORY_LABELS, TERMS_LABELS, type Category, type Terms } from "@/lib/constants";
 import { RespondForm } from "@/components/seller/respond-form";
 import { DealPanelSeller } from "@/components/deal/deal-panel-seller";
+import { ShareListingLink } from "@/components/seller/share-listing-link";
 
 export async function SellerListingDetail({
   listingId,
@@ -79,6 +80,9 @@ export async function SellerListingDetail({
               </button>
             </form>
           </div>
+        )}
+        {listing.status === "active" && listing.visibility === "all" && (
+          <ShareListingLink listingId={listing.id} />
         )}
         {listing.media.length > 0 && (
           <div className="mt-3 flex gap-2 overflow-x-auto">

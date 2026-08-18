@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { generateAnonHandle } from "@/lib/anon-handle";
 import { lookupLicense } from "@/lib/license-registry";
 import { ROLES, LICENSED_ROLES, ADDRESS_ROLES, roleHome, type Role } from "@/lib/constants";
+import { safeRedirect } from "@/lib/safe-redirect";
 
 export type SignupState = { error?: string } | undefined;
 
@@ -127,8 +128,14 @@ export async function signup(_prevState: SignupState, formData: FormData): Promi
     },
   });
 
+  // A retailer signing up from a shared listing link (CLAUDE.md §36) needs
+  // to land back on that listing to complete the action they clicked, not
+  // the generic role home — same optional-callbackUrl pattern login/actions.ts
+  // already uses.
+  const callbackUrl = String(formData.get("callbackUrl") ?? "").trim();
+
   try {
-    await signIn("credentials", { email, password, redirectTo: roleHome(role) });
+    await signIn("credentials", { email, password, redirectTo: safeRedirect(callbackUrl, roleHome(role)) });
   } catch (err) {
     if (err instanceof AuthError) {
       return { error: "Account created — sign in from the login page." };
