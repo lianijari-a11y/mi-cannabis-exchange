@@ -21,6 +21,77 @@ export type CreateAssistedSellerResult =
   | { ok: true; sellerId: string; businessName: string; role: "grower" | "processor" }
   | { ok: false; error: string };
 
+export type LicenseSearchResult = {
+  licenseNumber: string;
+  businessName: string;
+  street: string | null;
+  city: string | null;
+  state: string | null;
+  zip: string | null;
+  status: string;
+  phone: string | null;
+  category: string;
+};
+
+// Lets an AE/Admin find a grower/processor by whatever they actually have on
+// hand — a phone number from a call, a business name, or the license number
+// itself — while always resolving to a real State of Michigan CRA license
+// number. This matters because a real Account Executive hit a case where
+// their own lead-list export had a "license number" for a business that
+// didn't match the state's own number for that same business at all (two
+// different internal numbering schemes) — so this deliberately only ever
+// searches LicenseRegistry (the actual CRA import), never the Lead/CRM data,
+// even when searching by phone (LicenseRegistry.phone is itself sourced
+// from a name-matched enrichment pass, not license-number matching — see
+// CLAUDE.md §12/§35).
+export async function searchLicenseRegistryForAssist(
+  query: string,
+  mode: "number" | "name" | "phone"
+): Promise<LicenseSearchResult[]> {
+  const session = await requireAuth();
+  if (session.user.role !== "admin" && session.user.role !== "sales_rep") {
+    return [];
+  }
+
+  const q = query.trim();
+  if (!q) return [];
+
+  const scope = { category: { in: ["grower_b", "grower_c", "processor"] as string[] } };
+
+  if (mode === "number") {
+    const rows = await prisma.licenseRegistry.findMany({
+      where: { ...scope, licenseNumber: { contains: q, mode: "insensitive" } },
+      take: 10,
+      orderBy: { businessName: "asc" },
+    });
+    return rows;
+  }
+
+  if (mode === "name") {
+    const rows = await prisma.licenseRegistry.findMany({
+      where: { ...scope, businessName: { contains: q, mode: "insensitive" } },
+      take: 10,
+      orderBy: { businessName: "asc" },
+    });
+    return rows;
+  }
+
+  // Phone: stored formatted as "(xxx) xxx-xxxx" — normalize both sides to
+  // digits-only and filter in JS rather than trying a partial-format SQL
+  // match, since the candidate set (phone-having growers/processors) is
+  // small enough that this is simpler and more reliable than a fragile
+  // LIKE pattern against a formatted string.
+  const qDigits = q.replace(/\D/g, "");
+  if (qDigits.length < 4) return [];
+  const candidates = await prisma.licenseRegistry.findMany({
+    where: { ...scope, phone: { not: null } },
+    take: 500,
+  });
+  return candidates
+    .filter((c) => (c.phone ?? "").replace(/\D/g, "").includes(qDigits))
+    .slice(0, 10);
+}
+
 export async function createAssistedSellerAccount(formData: FormData): Promise<CreateAssistedSellerResult> {
   const session = await requireAuth();
   if (session.user.role !== "admin" && session.user.role !== "sales_rep") {

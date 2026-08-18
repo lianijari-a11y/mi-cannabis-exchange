@@ -2,7 +2,18 @@
 
 import { useState, useTransition } from "react";
 import { SellerPicker } from "./seller-picker";
-import { createAssistedSellerAccount } from "@/lib/assisted-seller-signup";
+import {
+  createAssistedSellerAccount,
+  searchLicenseRegistryForAssist,
+  type LicenseSearchResult,
+} from "@/lib/assisted-seller-signup";
+
+const SEARCH_MODES = [
+  { value: "number", label: "License #" },
+  { value: "name", label: "Business name" },
+  { value: "phone", label: "Phone" },
+] as const;
+type SearchMode = (typeof SEARCH_MODES)[number]["value"];
 
 const inputClass =
   "w-full border border-gray-300 dark:border-gray-700 rounded-lg px-3 py-2 text-sm mt-1 bg-transparent";
@@ -32,12 +43,25 @@ export function SellerPickerOrCreate({
 }) {
   const [mode, setMode] = useState<"search" | "create">("search");
   const [created, setCreated] = useState<{ id: string; businessName: string } | null>(null);
-  const [licenseNumber, setLicenseNumber] = useState("");
   const [contactName, setContactName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | undefined>();
   const [pending, startTransition] = useTransition();
+
+  const [searchMode, setSearchMode] = useState<SearchMode>("phone");
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<LicenseSearchResult[]>([]);
+  const [searching, startSearchTransition] = useTransition();
+  const [selected, setSelected] = useState<LicenseSearchResult | null>(null);
+
+  function runSearch() {
+    setResults([]);
+    startSearchTransition(async () => {
+      const r = await searchLicenseRegistryForAssist(query, searchMode);
+      setResults(r);
+    });
+  }
 
   if (created) {
     return (
@@ -76,9 +100,10 @@ export function SellerPickerOrCreate({
   }
 
   function submit() {
+    if (!selected) return;
     setError(undefined);
     const formData = new FormData();
-    formData.set("licenseNumber", licenseNumber);
+    formData.set("licenseNumber", selected.licenseNumber);
     formData.set("contactName", contactName);
     formData.set("email", email);
     formData.set("password", password);
@@ -106,22 +131,90 @@ export function SellerPickerOrCreate({
           Search existing instead
         </button>
       </div>
-      <div>
-        <label className={labelClass} htmlFor="assistedLicenseNumber">
-          State license number
-        </label>
-        <input
-          id="assistedLicenseNumber"
-          value={licenseNumber}
-          onChange={(e) => setLicenseNumber(e.target.value)}
-          placeholder="e.g. GC-000123"
-          className={inputClass}
-        />
-        <p className="text-[11px] text-gray-400 mt-1">
-          Checked against Michigan&apos;s Grower and Processor license registry — business name and
-          address auto-fill from there.
-        </p>
-      </div>
+
+      {!selected ? (
+        <div>
+          <label className={labelClass}>Find them in Michigan&apos;s state registry</label>
+          <div className="flex gap-1.5 mt-1">
+            {SEARCH_MODES.map((m) => (
+              <button
+                key={m.value}
+                type="button"
+                onClick={() => setSearchMode(m.value)}
+                className={`text-[11px] px-2 py-1 rounded-md border ${
+                  searchMode === m.value
+                    ? "bg-green-700 text-white border-green-700"
+                    : "border-gray-300 dark:border-gray-700 text-gray-600 dark:text-gray-400"
+                }`}
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
+          <div className="flex gap-2 mt-1.5">
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), runSearch())}
+              placeholder={
+                searchMode === "number" ? "e.g. AU-G-C-001819" : searchMode === "phone" ? "e.g. 248 953 9939" : "e.g. 123 Grow LLC"
+              }
+              className={inputClass + " mt-0"}
+            />
+            <button
+              type="button"
+              onClick={runSearch}
+              disabled={searching || !query.trim()}
+              className="shrink-0 bg-green-700 text-white rounded-lg px-3 py-2 text-xs font-medium disabled:opacity-50"
+            >
+              {searching ? "Searching…" : "Search"}
+            </button>
+          </div>
+          <p className="text-[11px] text-gray-400 mt-1">
+            Always searches the actual State of Michigan CRA registry — never a lead list&apos;s own
+            numbering, which can differ from the state&apos;s.
+          </p>
+          {!searching && results.length === 0 && query.trim() && (
+            <p className="text-xs text-gray-500 mt-2">No matches — try a different search, or a different field above.</p>
+          )}
+          {results.length > 0 && (
+            <div className="mt-2 border border-gray-200 dark:border-gray-800 rounded-lg overflow-hidden">
+              {results.map((r) => (
+                <button
+                  key={r.licenseNumber}
+                  type="button"
+                  onClick={() => setSelected(r)}
+                  className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50 dark:hover:bg-gray-800 border-b border-gray-100 dark:border-gray-800 last:border-b-0"
+                >
+                  <span className="font-medium text-gray-900 dark:text-gray-100">{r.businessName}</span>{" "}
+                  <span className="text-gray-400">
+                    — {r.licenseNumber} · {r.city ?? "?"}, {r.state ?? "MI"} · {r.status}
+                    {r.phone ? ` · ${r.phone}` : ""}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="rounded-lg border border-green-200 dark:border-green-900 bg-green-50 dark:bg-green-900/20 p-2.5">
+          <p className="text-xs text-green-800 dark:text-green-300">
+            <span className="font-medium">{selected.businessName}</span> — {selected.licenseNumber}
+          </p>
+          <p className="text-[11px] text-green-700/80 dark:text-green-400/80">
+            {selected.street ? `${selected.street}, ` : ""}
+            {selected.city}, {selected.state} {selected.zip} · {selected.status}
+          </p>
+          <button
+            type="button"
+            onClick={() => setSelected(null)}
+            className="text-[11px] text-gray-500 dark:text-gray-400 underline mt-1"
+          >
+            Choose a different license
+          </button>
+        </div>
+      )}
+
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className={labelClass} htmlFor="assistedContactName">
@@ -167,10 +260,10 @@ export function SellerPickerOrCreate({
       <button
         type="button"
         onClick={submit}
-        disabled={pending || !licenseNumber.trim() || !contactName.trim() || !email.trim() || password.length < 8}
+        disabled={pending || !selected || !contactName.trim() || !email.trim() || password.length < 8}
         className="bg-green-700 text-white rounded-lg px-3 py-1.5 text-xs font-medium disabled:opacity-50"
       >
-        {pending ? "Looking up license…" : "Create account & continue"}
+        {pending ? "Creating account…" : "Create account & continue"}
       </button>
     </div>
   );
