@@ -3,7 +3,8 @@ import { redirect } from "next/navigation";
 import { requireRole } from "@/lib/dal";
 import { prisma } from "@/lib/prisma";
 import { createListing } from "@/lib/listings";
-import { CATEGORIES, TERMS, SALES_REP_ASSISTABLE_ROLES } from "@/lib/constants";
+import { CATEGORIES, UNITS, TERMS, SALES_REP_ASSISTABLE_ROLES } from "@/lib/constants";
+import type { ListingDraft } from "@/lib/ai-listing";
 
 // Search Growers/Processors by business name or email — used by both the
 // Sales Rep portal and Admin's "post on behalf of a seller" page (added
@@ -92,6 +93,85 @@ export async function handleCreateListingAsAssistant(
     files,
     session.user.id
   );
+
+  redirect(redirectBasePath);
+}
+
+// Same posting-under-the-seller's-own-identity model as
+// handleCreateListingAsAssistant above, but for a whole batch of drafts at
+// once — added after a real Account Executive pasted a 21-strain price list
+// into the single-item AI structuring flow and it broke (see CLAUDE.md).
+// No per-item media here: a pasted list doesn't carry per-item photos, so
+// bulk-created listings post text-only — the seller can add photos later
+// from their own listing detail page like any other listing.
+export async function handleCreateListingsAsAssistantBulk(
+  actorRole: "sales_rep" | "admin",
+  redirectBasePath: string,
+  formData: FormData
+) {
+  const session = await requireRole(actorRole);
+
+  const sellerId = String(formData.get("sellerId") ?? "");
+  const seller = await prisma.user.findUnique({ where: { id: sellerId } });
+  if (!seller || !SALES_REP_ASSISTABLE_ROLES.includes(seller.role as (typeof SALES_REP_ASSISTABLE_ROLES)[number])) {
+    redirect(`${redirectBasePath}/listings/new?error=${encodeURIComponent("Choose a valid grower or processor to post for.")}`);
+  }
+
+  let drafts: ListingDraft[];
+  try {
+    drafts = JSON.parse(String(formData.get("drafts") ?? "[]"));
+  } catch {
+    redirect(`${redirectBasePath}/listings/new?error=${encodeURIComponent("Something went wrong submitting the batch — try again.")}`);
+  }
+  if (!Array.isArray(drafts) || drafts.length === 0) {
+    redirect(`${redirectBasePath}/listings/new?error=${encodeURIComponent("No listings to post.")}`);
+  }
+
+  const expiresInRaw = String(formData.get("expiresInHours") ?? "").trim();
+  const expiresInHours = expiresInRaw ? Number(expiresInRaw) : null;
+  const expiresAt =
+    expiresInHours && Number.isFinite(expiresInHours)
+      ? new Date(Date.now() + expiresInHours * 60 * 60 * 1000)
+      : null;
+
+  // Every row was already editable/removable in the review table, so an
+  // invalid row here means the client-side "Post all" guard was bypassed —
+  // skip it rather than fail the whole batch over one bad row.
+  let created = 0;
+  for (const d of drafts) {
+    const strainName = typeof d?.strainName === "string" ? d.strainName.trim() : "";
+    const category = CATEGORIES.includes(d?.category) ? d.category : null;
+    const unit = UNITS.includes(d?.unit) ? d.unit : null;
+    const terms = TERMS.includes(d?.terms) ? d.terms : null;
+    const quantity = Number(d?.quantity);
+    const pricePerUnit = Number(d?.pricePerUnit);
+    if (!strainName || !category || !unit || !terms) continue;
+    if (!Number.isFinite(quantity) || quantity <= 0) continue;
+    if (!Number.isFinite(pricePerUnit) || pricePerUnit <= 0) continue;
+
+    await createListing(
+      seller.id,
+      seller.role,
+      {
+        strainName,
+        category,
+        thcPercent: typeof d?.thcPercent === "number" ? d.thcPercent : null,
+        quantity,
+        unit,
+        pricePerUnit,
+        terms,
+        notes: typeof d?.notes === "string" && d.notes.trim() ? d.notes.trim() : null,
+        expiresAt,
+      },
+      [],
+      session.user.id
+    );
+    created++;
+  }
+
+  if (created === 0) {
+    redirect(`${redirectBasePath}/listings/new?error=${encodeURIComponent("None of those rows had valid required fields — nothing was posted.")}`);
+  }
 
   redirect(redirectBasePath);
 }

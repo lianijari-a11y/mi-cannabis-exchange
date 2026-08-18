@@ -2,7 +2,7 @@ import { requireRole } from "@/lib/dal";
 import { PortalShell } from "@/components/portal-shell";
 import { ListingForm } from "@/components/seller/listing-form";
 import { SellerPicker } from "@/components/sales/seller-picker";
-import { createListingAsAdmin } from "./actions";
+import { createListingAsAdmin, createListingsBulkAsAdmin } from "./actions";
 import { searchSellersAction } from "@/app/admin/search-action";
 
 const NAV = [
@@ -36,6 +36,7 @@ export default async function NewAdminListingPage({
       </p>
       <ListingForm
         action={createListingAsAdmin}
+        bulkAction={createListingsBulkAsAdmin}
         error={error}
         sellerPickerSlot={<SellerPicker searchAction={searchSellersAction} />}
       />

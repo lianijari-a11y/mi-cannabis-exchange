@@ -2,7 +2,7 @@ import { requireRole } from "@/lib/dal";
 import { PortalShell } from "@/components/portal-shell";
 import { ListingForm } from "@/components/seller/listing-form";
 import { SellerPicker } from "@/components/sales/seller-picker";
-import { createListingAsSalesRep } from "./actions";
+import { createListingAsSalesRep, createListingsBulkAsSalesRep } from "./actions";
 import { searchSellersAction } from "@/app/sales/search-action";
 
 const NAV = [
@@ -31,6 +31,7 @@ export default async function NewSalesRepListingPage({
       </p>
       <ListingForm
         action={createListingAsSalesRep}
+        bulkAction={createListingsBulkAsSalesRep}
         error={error}
         sellerPickerSlot={<SellerPicker searchAction={searchSellersAction} />}
       />

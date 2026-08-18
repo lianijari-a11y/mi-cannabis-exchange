@@ -32,6 +32,9 @@ export type ListingDraft = {
 };
 
 export type StructureResult = { ok: true; draft: ListingDraft } | { ok: false; error: string };
+export type StructureBulkResult =
+  | { ok: true; drafts: ListingDraft[] }
+  | { ok: false; error: string };
 
 function systemPrompt() {
   return `You extract structured wholesale-cannabis listing data from raw, informal text a Grower/Processor/Broker pastes in (a text message, a spreadsheet row, shorthand notes). Output ONLY a single JSON object, no prose, no markdown fences, matching exactly this shape:
@@ -48,6 +51,27 @@ function systemPrompt() {
 }
 
 If a field truly can't be inferred, use null (or "other"/"negotiable" for the enum fields, never invent a specific number). Never fabricate a THC percentage, quantity, or price that isn't stated or clearly implied.`;
+}
+
+// Same shape as systemPrompt(), but for a whole pasted menu/price list at
+// once (e.g. a delivery's full strain list) rather than one product's
+// notes — see CLAUDE.md, added after a real Account Executive paste of a
+// 21-strain list broke the single-item structureListingDraft entirely.
+function bulkSystemPrompt() {
+  return `You extract structured wholesale-cannabis listing data from raw, informal text a Grower/Processor/Broker pastes in — this text describes MULTIPLE distinct products (a full price list or menu), not just one. Output ONLY a single JSON array, no prose, no markdown fences, with one object per distinct product mentioned, each matching exactly this shape:
+
+{
+  "strainName": string,
+  "category": one of ${JSON.stringify(CATEGORIES)},
+  "thcPercent": number or null,
+  "quantity": number or null,
+  "unit": one of ${JSON.stringify(UNITS)} ("lb" for flower/weight, "liter" for liquid concentrate/oil, "unit" for countable items like vapes/edibles/pre-rolls),
+  "pricePerUnit": number or null,
+  "terms": one of ${JSON.stringify(TERMS)} (default "negotiable" if payment terms aren't mentioned; "cash" only if cash is explicitly stated; "net_30" only if 30-day terms are explicitly stated),
+  "notes": string or null
+}
+
+Extract EVERY distinct product mentioned as its own array entry — never merge, summarize, or skip any of them. If a field truly can't be inferred for an item, use null (or "other"/"negotiable" for the enum fields, never invent a specific number). Never fabricate a THC percentage, quantity, or price that isn't stated or clearly implied — a bare number next to a strain name is very often a weight, not a price, so only fill "pricePerUnit" when a currency figure is actually distinguishable from the quantity.`;
 }
 
 function extractJson(text: string): unknown {
@@ -122,6 +146,71 @@ export async function structureListingDraft(rawText: string): Promise<StructureR
       return { ok: false, error: "Couldn't structure that text — try filling in the form by hand." };
     }
     return { ok: true, draft };
+  } catch {
+    return { ok: false, error: "Something went wrong reaching the assistant. Try again shortly." };
+  }
+}
+
+function extractJsonArray(text: string): unknown[] | null {
+  const start = text.indexOf("[");
+  const end = text.lastIndexOf("]");
+  if (start === -1 || end === -1 || end < start) return null;
+  try {
+    const parsed = JSON.parse(text.slice(start, end + 1));
+    return Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+// Structures a whole pasted list into multiple drafts at once — the caller
+// (ListingForm's bulk mode) is responsible for letting the seller review and
+// edit every row before any of it actually posts, same "draft only, never
+// auto-post" posture as the single-item structureListingDraft above.
+export async function structureListingDraftsBulk(rawText: string): Promise<StructureBulkResult> {
+  await requireAuth();
+
+  const trimmed = rawText.trim();
+  if (!trimmed) return { ok: false, error: "Paste some inventory notes first." };
+
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    return {
+      ok: false,
+      error:
+        "AI structuring isn't configured yet — the platform owner needs to add an Anthropic API key. Fill in the fields below by hand for now.",
+    };
+  }
+
+  try {
+    const client = new Anthropic({ apiKey });
+    const response = await client.messages.create({
+      model: MODEL,
+      max_tokens: 4096,
+      system: bulkSystemPrompt(),
+      output_config: { effort: "low" },
+      messages: [{ role: "user", content: trimmed }],
+    });
+
+    const textBlock = response.content.find((b) => b.type === "text");
+    if (textBlock?.type !== "text") {
+      return { ok: false, error: "Couldn't parse a response — try filling in the form by hand." };
+    }
+
+    const parsedArray = extractJsonArray(textBlock.text);
+    if (!parsedArray) {
+      return { ok: false, error: "Couldn't structure that list — try filling in the form by hand." };
+    }
+
+    const drafts = parsedArray
+      .map((item) => coerceDraft(item))
+      .filter((d): d is ListingDraft => d !== null && d.strainName.trim() !== "");
+
+    if (drafts.length === 0) {
+      return { ok: false, error: "Couldn't find any products in that text — try filling in the form by hand." };
+    }
+
+    return { ok: true, drafts };
   } catch {
     return { ok: false, error: "Something went wrong reaching the assistant. Try again shortly." };
   }
