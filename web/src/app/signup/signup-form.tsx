@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { signup } from "./actions";
 
@@ -50,34 +50,45 @@ export function SignupForm() {
   const [address, setAddress] = useState("");
   const [city, setCity] = useState("");
   const [zip, setZip] = useState("");
+  const [licenseNumber, setLicenseNumber] = useState("");
   const [lookup, setLookup] = useState<LicenseLookupResult | null>(null);
   const [lookupPending, setLookupPending] = useState(false);
 
-  async function handleLicenseBlur(e: React.FocusEvent<HTMLInputElement>) {
-    const licenseNumber = e.target.value.trim();
-    if (!licenseNumber) {
+  // Debounced as-you-type lookup rather than onBlur-only — onBlur only
+  // fires once the field loses focus, which a user can easily skip (hitting
+  // Enter to submit, tabbing through a password manager, etc.), silently
+  // leaving business name/address unfilled with no obvious cause. Firing
+  // off a short pause in typing instead means it works no matter how the
+  // user gets from this field to the next.
+  useEffect(() => {
+    const trimmed = licenseNumber.trim();
+    if (!trimmed) {
       setLookup(null);
       return;
     }
     setLookupPending(true);
-    try {
-      const res = await fetch(
-        `/api/license-lookup?licenseNumber=${encodeURIComponent(licenseNumber)}&role=${encodeURIComponent(role)}`
-      );
-      const result: LicenseLookupResult = await res.json();
-      setLookup(result);
-      if (result.found) {
-        if (!businessName) setBusinessName(result.businessName ?? "");
-        if (!address) setAddress(result.street ?? "");
-        if (!city) setCity(result.city ?? "");
-        if (!zip) setZip(result.zip ?? "");
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(
+          `/api/license-lookup?licenseNumber=${encodeURIComponent(trimmed)}&role=${encodeURIComponent(role)}`
+        );
+        const result: LicenseLookupResult = await res.json();
+        setLookup(result);
+        if (result.found) {
+          if (!businessName) setBusinessName(result.businessName ?? "");
+          if (!address) setAddress(result.street ?? "");
+          if (!city) setCity(result.city ?? "");
+          if (!zip) setZip(result.zip ?? "");
+        }
+      } catch {
+        setLookup(null);
+      } finally {
+        setLookupPending(false);
       }
-    } catch {
-      setLookup(null);
-    } finally {
-      setLookupPending(false);
-    }
-  }
+    }, 500);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [licenseNumber, role]);
 
   return (
     <form action={formAction} className="space-y-3">
@@ -119,7 +130,8 @@ export function SignupForm() {
               name="licenseNumber"
               required
               className={inputClass}
-              onBlur={handleLicenseBlur}
+              value={licenseNumber}
+              onChange={(e) => setLicenseNumber(e.target.value)}
               placeholder="e.g. AU-G-C-001830"
             />
             {lookupPending && (
