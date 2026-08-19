@@ -58,10 +58,24 @@ export function MenuSection({
 
   return (
     <div>
-      <button
-        type="button"
+      {/* A plain clickable div, not a <button> — ShareMenuLink below renders
+          its own <button>, and interactive content can't legally nest
+          inside a <button> (browsers silently break out of it, which
+          desyncs the server-rendered HTML from the client render and
+          triggers a real React hydration mismatch — confirmed live in the
+          console, not just a lint nit). role="button" + a key handler keep
+          this keyboard-operable without the invalid nesting. */}
+      <div
+        role="button"
+        tabIndex={0}
         onClick={() => setOpen((o) => !o)}
-        className="w-full flex items-center justify-between gap-2 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl px-4 py-3 text-left hover:border-green-300 dark:hover:border-green-800"
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            setOpen((o) => !o);
+          }
+        }}
+        className="w-full flex items-center justify-between gap-2 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl px-4 py-3 text-left hover:border-green-300 dark:hover:border-green-800 cursor-pointer"
       >
         <span className="flex items-center gap-2">
           {open ? (
@@ -80,7 +94,7 @@ export function MenuSection({
             {active < listings.length ? ` · ${active} active` : ""}
           </span>
         </span>
-      </button>
+      </div>
       {open && (
         <div className="mt-3 space-y-3 pl-2">
           {bulkPhotoSaveAction && activeListings.length > 0 && (

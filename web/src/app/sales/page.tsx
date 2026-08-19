@@ -11,6 +11,7 @@ import { ROLE_LABELS, type Role } from "@/lib/constants";
 const NAV = [
   { href: "/sales", label: "My accounts" },
   { href: "/sales/orders", label: "Orders" },
+  { href: "/sales/negotiations", label: "Negotiations" },
   { href: "/sales/listings/new", label: "Post for a seller" },
   { href: "/sales/earnings", label: "My earnings" },
   { href: "/sales/marketing", label: "Marketing suite" },

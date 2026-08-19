@@ -50,6 +50,16 @@ model User {
   // person can still audit/revoke a match — see CLAUDE.md §12.
   licenseAutoMatched Boolean @default(false)
 
+  // True when an Admin/AE chose this account's current password on the
+  // user's behalf (a quick-signup temp password, or a password reset) —
+  // set by createRetailerAccountForAdmin/resetUserPassword, cleared once
+  // the person actually sets their own password. Drives the license-first
+  // inline sign-in flow on a public menu/collection link
+  // (components/cart/license-auth-flow.tsx): a retailer whose account was
+  // set up for them gets prompted to choose a real password instead of
+  // being asked for the temporary one nobody expects them to remember.
+  mustChangePassword Boolean @default(false)
+
   // Platform owner's default transporter, pre-selected (but overridable) when
   // a retailer picks who ships their deal. Admin-only toggle. Only meaningful
   // for role = transporter.

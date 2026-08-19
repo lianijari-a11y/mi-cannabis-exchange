@@ -13,6 +13,7 @@ const NAV = [
   { href: "/admin/listings", label: "All listings" },
   { href: "/admin/accounts", label: "Accounts" },
   { href: "/admin/orders", label: "Orders" },
+  { href: "/admin/negotiations", label: "Negotiations" },
   { href: "/admin/listings/new", label: "Post for a seller" },
   { href: "/admin/staff/new", label: "Add staff account" },
   { href: "/admin/sales-reps", label: "Account Executive earnings" },

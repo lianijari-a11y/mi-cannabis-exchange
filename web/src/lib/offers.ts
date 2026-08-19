@@ -383,6 +383,30 @@ export async function allThreadsForBroker() {
   });
 }
 
+// An Account Executive's own negotiations view — real identity on both
+// sides, but scoped to their own assigned accounts only, not
+// platform-wide. This is a deliberate, confirmed reversal of the
+// blind-marketplace boundary for the AE role specifically: previously an
+// AE only ever saw their own client's (the seller's) real identity, never
+// the retailer on the other side of a negotiation. Raised directly and
+// confirmed by the human before building — same "flag, don't decide
+// silently" posture CLAUDE.md already documents for this exact class of
+// change (see e.g. §11/§18's own reversals). Admin's equivalent view
+// reuses allThreadsForBroker() directly rather than a second function,
+// since Admin already has that same unrestricted platform-wide reach.
+export async function threadsForSalesRep(salesRepId: string) {
+  return prisma.offerThread.findMany({
+    where: { listing: { postedBy: { assignedSalesRepId: salesRepId } } },
+    include: {
+      rounds: { orderBy: { createdAt: "asc" } },
+      listing: { include: { postedBy: true, media: true } },
+      retailer: true,
+      deal: true,
+    },
+    orderBy: { updatedAt: "desc" },
+  });
+}
+
 export async function allDealsForBroker() {
   return prisma.deal.findMany({
     include: {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Leaf, Minus, Plus } from "lucide-react";
+import { Leaf, Minus, Plus, X } from "lucide-react";
 import Link from "next/link";
 import { CATEGORY_LABELS, TERMS, TERMS_LABELS, type Category, type Terms } from "@/lib/constants";
 import { submitPublicCartOrder } from "@/lib/public-cart-actions";
@@ -72,6 +72,7 @@ export function CartBuilder({
   const [result, setResult] = useState<{ ok: boolean; error?: string } | null>(null);
   const [declined, setDeclined] = useState(false);
   const [submitting, setSubmitting] = useState<"accept" | "counter" | null>(null);
+  const [lightbox, setLightbox] = useState<{ url: string; type: string; alt: string } | null>(null);
 
   function suggestedPrice(listing: CartListing, qty: number): number {
     if (
@@ -217,14 +218,23 @@ export function CartBuilder({
                   }`}
                 >
                   {cover ? (
-                    <div className="w-14 h-14 shrink-0 rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-800">
+                    <button
+                      type="button"
+                      onClick={() => setLightbox({ url: cover.url, type: cover.type, alt: listing.strainName })}
+                      className="w-14 h-14 shrink-0 rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-800 cursor-zoom-in"
+                      aria-label={`View larger photo of ${listing.strainName}`}
+                    >
                       {cover.type === "video" ? (
-                        <video src={cover.url} muted className="w-full h-full object-cover" />
+                        <video src={cover.url} muted className="w-full h-full object-cover pointer-events-none" />
                       ) : (
                         // eslint-disable-next-line @next/next/no-img-element
-                        <img src={cover.url} alt={listing.strainName} className="w-full h-full object-cover" />
+                        <img
+                          src={cover.url}
+                          alt={listing.strainName}
+                          className="w-full h-full object-cover pointer-events-none"
+                        />
                       )}
-                    </div>
+                    </button>
                   ) : (
                     <div className="w-14 h-14 shrink-0 rounded-lg bg-gray-100 dark:bg-gray-800 flex items-center justify-center">
                       <Leaf className="w-5 h-5 text-gray-300 dark:text-gray-600" />
@@ -404,6 +414,39 @@ export function CartBuilder({
           </div>
         )}
       </div>
+
+      {lightbox && (
+        <div
+          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4"
+          onClick={() => setLightbox(null)}
+        >
+          <button
+            type="button"
+            onClick={() => setLightbox(null)}
+            className="absolute top-4 right-4 text-white/80 hover:text-white"
+            aria-label="Close"
+          >
+            <X className="w-7 h-7" />
+          </button>
+          {lightbox.type === "video" ? (
+            <video
+              src={lightbox.url}
+              controls
+              autoPlay
+              onClick={(e) => e.stopPropagation()}
+              className="max-w-full max-h-full rounded-lg"
+            />
+          ) : (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={lightbox.url}
+              alt={lightbox.alt}
+              onClick={(e) => e.stopPropagation()}
+              className="max-w-full max-h-full rounded-lg object-contain"
+            />
+          )}
+        </div>
+      )}
     </div>
   );
 }
