@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Minus, Plus } from "lucide-react";
+import { Leaf, Minus, Plus } from "lucide-react";
 import Link from "next/link";
 import { CATEGORY_LABELS, TERMS, TERMS_LABELS, type Category, type Terms } from "@/lib/constants";
 import { submitPublicCartOrder } from "@/lib/public-cart-actions";
@@ -206,6 +206,7 @@ export function CartBuilder({
               const step = listing.unit === "liter" ? 0.1 : 1;
               const priceAdjusted = price !== suggestedPrice(listing, qty);
               const adjusted = qty !== listing.quantity || priceAdjusted;
+              const cover = listing.media[0];
               return (
                 <div
                   key={listing.id}
@@ -215,6 +216,20 @@ export function CartBuilder({
                       : "border-gray-200 dark:border-gray-800"
                   }`}
                 >
+                  {cover ? (
+                    <div className="w-14 h-14 shrink-0 rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-800">
+                      {cover.type === "video" ? (
+                        <video src={cover.url} muted className="w-full h-full object-cover" />
+                      ) : (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={cover.url} alt={listing.strainName} className="w-full h-full object-cover" />
+                      )}
+                    </div>
+                  ) : (
+                    <div className="w-14 h-14 shrink-0 rounded-lg bg-gray-100 dark:bg-gray-800 flex items-center justify-center">
+                      <Leaf className="w-5 h-5 text-gray-300 dark:text-gray-600" />
+                    </div>
+                  )}
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
                       {listing.strainName}
