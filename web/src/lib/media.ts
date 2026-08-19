@@ -1,24 +1,25 @@
 import "server-only";
-import { writeFile, mkdir } from "fs/promises";
+import { put } from "@vercel/blob";
 import path from "path";
 import { attemptRedaction } from "@/lib/media-redaction";
 
-const UPLOAD_ROOT = path.join(process.cwd(), "public", "uploads");
-
-// Local-disk storage for development only — see CLAUDE.md §8, swap for real
-// object storage (S3/Supabase Storage/Cloudinary) before production.
-async function writeUpload(key: string, file: File, defaultExt: string): Promise<string> {
-  const dir = path.join(UPLOAD_ROOT, key);
-  await mkdir(dir, { recursive: true });
-
+// Vercel Blob Storage — swapped in from local disk (CLAUDE.md §7/§8's old
+// "dev only, swap before production" note) after uploads started failing
+// outright on the deployed app: Vercel's serverless filesystem is
+// read-only outside a short-lived temp dir, so writeFile() to
+// public/uploads/ never actually persisted anything in production. Public
+// access (not signed/private) matches how these URLs were already used
+// throughout the app — embedded directly in <img>/<video> src, no
+// per-request auth check on the file itself, same as the old static
+// /uploads/ serving.
+async function uploadToBlob(key: string, file: File, buffer: Buffer, defaultExt: string): Promise<string> {
   const ext = path.extname(file.name) || defaultExt;
-  const filename = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}${ext}`;
-  const filePath = path.join(dir, filename);
-
-  const buffer = Buffer.from(await file.arrayBuffer());
-  await writeFile(filePath, buffer);
-
-  return `/uploads/${key}/${filename}`;
+  const pathname = `${key}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}${ext}`;
+  const blob = await put(pathname, buffer, {
+    access: "public",
+    contentType: file.type || undefined,
+  });
+  return blob.url;
 }
 
 export async function saveMediaFile(
@@ -37,15 +38,24 @@ export async function saveMediaFile(
     throw new Error(`Unsupported media type: ${file.type || "unknown"}`);
   }
 
-  const url = await writeUpload(listingId, file, isVideo ? ".mp4" : ".jpg");
+  let buffer: Buffer = Buffer.from(await file.arrayBuffer());
 
   // Best-effort logo/contact-info redaction — images only, never blocks the
   // upload on failure. See lib/media-redaction.ts for the honest limits.
-  let redaction: Awaited<ReturnType<typeof attemptRedaction>> = { attempted: false, regionsFound: 0 };
+  // Operates on the in-memory buffer now (no local file to read/overwrite
+  // once uploads go straight to Blob storage) and hands back whichever
+  // buffer should actually be uploaded.
+  let redaction: Omit<Awaited<ReturnType<typeof attemptRedaction>>, "buffer"> = {
+    attempted: false,
+    regionsFound: 0,
+  };
   if (isImage) {
-    const absolutePath = path.join(UPLOAD_ROOT, url.replace(/^\/uploads\//, ""));
-    redaction = await attemptRedaction(absolutePath, file.type);
+    const result = await attemptRedaction(buffer, file.type);
+    buffer = result.buffer;
+    redaction = { attempted: result.attempted, regionsFound: result.regionsFound, error: result.error };
   }
+
+  const url = await uploadToBlob(listingId, file, buffer, isVideo ? ".mp4" : ".jpg");
 
   return {
     url,
@@ -65,5 +75,6 @@ export async function saveDocumentFile(key: string, file: File): Promise<string>
     throw new Error(`Unsupported document type: ${file.type || "unknown"}`);
   }
 
-  return writeUpload(key, file, isPdf ? ".pdf" : ".jpg");
+  const buffer = Buffer.from(await file.arrayBuffer());
+  return uploadToBlob(key, file, buffer, isPdf ? ".pdf" : ".jpg");
 }

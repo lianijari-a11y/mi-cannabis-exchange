@@ -8,6 +8,11 @@ export type RedactionResult = {
   attempted: boolean;
   regionsFound: number;
   error?: string;
+  // The buffer to actually persist — the redacted version if any regions
+  // were found and composited, otherwise the original, untouched buffer
+  // passed in. Always present so callers never have to branch on whether
+  // redaction happened before deciding what to upload.
+  buffer: Buffer;
 };
 
 const SUPPORTED_MEDIA_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"];
@@ -23,26 +28,24 @@ const SUPPORTED_MEDIA_TYPES = ["image/jpeg", "image/png", "image/gif", "image/we
 // promise depends on. Sellers remain responsible for not uploading photos
 // that show their own identity; this is a second layer, not the only one.
 // Falls back to a no-op (never blocks the upload) if ANTHROPIC_API_KEY isn't
-// configured, same posture as lib/ai-listing.ts.
-export async function attemptRedaction(
-  absoluteFilePath: string,
-  mimeType: string
-): Promise<RedactionResult> {
+// configured, same posture as lib/ai-listing.ts. Takes and returns an
+// in-memory buffer — there's no local file to read/overwrite once uploads
+// go straight to Blob storage (see lib/media.ts).
+export async function attemptRedaction(original: Buffer, mimeType: string): Promise<RedactionResult> {
   if (!SUPPORTED_MEDIA_TYPES.includes(mimeType)) {
-    return { attempted: false, regionsFound: 0 };
+    return { attempted: false, regionsFound: 0, buffer: original };
   }
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
-    return { attempted: false, regionsFound: 0, error: "ANTHROPIC_API_KEY not configured" };
+    return { attempted: false, regionsFound: 0, error: "ANTHROPIC_API_KEY not configured", buffer: original };
   }
 
   try {
-    const original = await sharp(absoluteFilePath).toBuffer();
     const meta = await sharp(original).metadata();
     const width = meta.width ?? 0;
     const height = meta.height ?? 0;
     if (!width || !height) {
-      return { attempted: false, regionsFound: 0, error: "Couldn't read image dimensions" };
+      return { attempted: false, regionsFound: 0, error: "Couldn't read image dimensions", buffer: original };
     }
 
     const client = new Anthropic({ apiKey });
@@ -79,16 +82,16 @@ export async function attemptRedaction(
     const text = textBlock && "text" in textBlock ? textBlock.text : "[]";
     const start = text.indexOf("[");
     const end = text.lastIndexOf("]");
-    if (start === -1 || end === -1) return { attempted: true, regionsFound: 0 };
+    if (start === -1 || end === -1) return { attempted: true, regionsFound: 0, buffer: original };
 
     let regions: { x: number; y: number; w: number; h: number }[];
     try {
       regions = JSON.parse(text.slice(start, end + 1));
     } catch {
-      return { attempted: true, regionsFound: 0, error: "Couldn't parse detection response" };
+      return { attempted: true, regionsFound: 0, error: "Couldn't parse detection response", buffer: original };
     }
     if (!Array.isArray(regions) || regions.length === 0) {
-      return { attempted: true, regionsFound: 0 };
+      return { attempted: true, regionsFound: 0, buffer: original };
     }
 
     const composites = regions
@@ -115,17 +118,17 @@ export async function attemptRedaction(
         };
       });
 
-    if (composites.length === 0) return { attempted: true, regionsFound: 0 };
+    if (composites.length === 0) return { attempted: true, regionsFound: 0, buffer: original };
 
     const redactedBuffer = await sharp(original).composite(composites).toBuffer();
-    await sharp(redactedBuffer).toFile(absoluteFilePath);
 
-    return { attempted: true, regionsFound: composites.length };
+    return { attempted: true, regionsFound: composites.length, buffer: redactedBuffer };
   } catch (err) {
     return {
       attempted: true,
       regionsFound: 0,
       error: err instanceof Error ? err.message : "Redaction failed",
+      buffer: original,
     };
   }
 }
