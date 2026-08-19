@@ -20,6 +20,8 @@ type Listing = {
   status: string;
   visibility: string;
   lastConfirmedAt: string | Date;
+  minimumOrderQuantity: number | null;
+  belowMinimumPricePerUnit: number | null;
   media: Media[];
 };
 

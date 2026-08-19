@@ -25,14 +25,22 @@ export default async function SalesRepPage() {
 
   return (
     <PortalShell roleLabel="Account Executive" navItems={NAV}>
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between mb-4 gap-2 flex-wrap">
         <h1 className="text-lg font-semibold text-gray-900 dark:text-gray-100">My accounts</h1>
-        <Link
-          href="/sales/listings/new"
-          className="bg-green-700 text-white rounded-lg px-3 py-1.5 text-sm font-medium"
-        >
-          Post for a seller
-        </Link>
+        <div className="flex gap-2">
+          <Link
+            href="/sales/collections/new"
+            className="border border-green-700 text-green-700 dark:text-green-400 rounded-lg px-3 py-1.5 text-sm font-medium"
+          >
+            Share menus with a link
+          </Link>
+          <Link
+            href="/sales/listings/new"
+            className="bg-green-700 text-white rounded-lg px-3 py-1.5 text-sm font-medium"
+          >
+            Post for a seller
+          </Link>
+        </div>
       </div>
       <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
         Every grower/processor you&apos;re working with, each with their whole menu grouped

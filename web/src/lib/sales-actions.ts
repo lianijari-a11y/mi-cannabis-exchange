@@ -267,6 +267,8 @@ async function applyListingEditAsAssistant(
   const pricePerUnit = Number(formData.get("pricePerUnit"));
   const terms = String(formData.get("terms") ?? "");
   const notes = String(formData.get("notes") ?? "").trim();
+  const moqRaw = String(formData.get("minimumOrderQuantity") ?? "").trim();
+  const belowMinPriceRaw = String(formData.get("belowMinimumPricePerUnit") ?? "").trim();
 
   if (!strainName || !CATEGORIES.includes(category as (typeof CATEGORIES)[number])) {
     return { ok: false, error: "Fill in the required fields." };
@@ -297,6 +299,8 @@ async function applyListingEditAsAssistant(
         pricePerUnit,
         terms: terms as (typeof TERMS)[number],
         notes: notes || null,
+        minimumOrderQuantity: moqRaw ? Number(moqRaw) : null,
+        belowMinimumPricePerUnit: belowMinPriceRaw ? Number(belowMinPriceRaw) : null,
       },
       files,
       removedMediaIds,

@@ -92,6 +92,8 @@ export type ListingEditInput = {
   pricePerUnit: number;
   terms: Terms;
   notes: string | null;
+  minimumOrderQuantity: number | null;
+  belowMinimumPricePerUnit: number | null;
 };
 
 // Growers/processors sell out of the same menu over days — price, quantity,
@@ -162,6 +164,8 @@ export async function updateListing(
       pricePerUnit: input.pricePerUnit,
       terms: input.terms,
       notes: input.notes,
+      minimumOrderQuantity: input.minimumOrderQuantity,
+      belowMinimumPricePerUnit: input.belowMinimumPricePerUnit,
       // Same "any edit counts as a freshness signal" intent as
       // confirmListingFresh — see the comment on lastConfirmedAt in
       // schema.prisma.
@@ -367,6 +371,8 @@ export async function publicMenuView(batchId: string) {
       pricePerUnit: true,
       terms: true,
       media: true,
+      minimumOrderQuantity: true,
+      belowMinimumPricePerUnit: true,
       postedBy: { select: { anonHandle: true } },
     },
     orderBy: { strainName: "asc" },

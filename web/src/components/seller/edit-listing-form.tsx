@@ -17,6 +17,8 @@ type EditableListing = {
   pricePerUnit: number;
   terms: string;
   notes: string | null;
+  minimumOrderQuantity: number | null;
+  belowMinimumPricePerUnit: number | null;
   media: { id: string; url: string; type: string }[];
 };
 
@@ -154,6 +156,42 @@ export function EditListingForm({
           </select>
         </div>
       </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className={labelClass} htmlFor="edit-minimumOrderQuantity">
+            Minimum order ({listing.unit}, optional)
+          </label>
+          <input
+            id="edit-minimumOrderQuantity"
+            name="minimumOrderQuantity"
+            type="number"
+            step="0.01"
+            min="0"
+            defaultValue={listing.minimumOrderQuantity ?? ""}
+            className={inputClass}
+          />
+        </div>
+        <div>
+          <label className={labelClass} htmlFor="edit-belowMinimumPricePerUnit">
+            Price below minimum ($, optional)
+          </label>
+          <input
+            id="edit-belowMinimumPricePerUnit"
+            name="belowMinimumPricePerUnit"
+            type="number"
+            step="0.01"
+            min="0"
+            defaultValue={listing.belowMinimumPricePerUnit ?? ""}
+            className={inputClass}
+          />
+        </div>
+      </div>
+      <p className="text-[11px] text-gray-400 -mt-2">
+        Optional: charge a different (usually higher) per-unit price for orders smaller than your
+        preferred minimum, instead of turning them away. Leave both blank to sell at the same price
+        regardless of quantity.
+      </p>
 
       <div>
         <label className={labelClass} htmlFor="edit-notes">

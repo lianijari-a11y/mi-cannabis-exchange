@@ -17,6 +17,8 @@ type Listing = {
   terms: string;
   notes: string | null;
   status: string;
+  minimumOrderQuantity: number | null;
+  belowMinimumPricePerUnit: number | null;
   media: Media[];
 };
 

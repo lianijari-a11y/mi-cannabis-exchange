@@ -189,9 +189,20 @@ export async function addOfferRound(params: {
     const sellerId = thread.listing.postedById;
     const retailerId = thread.retailerId;
 
+    // A cart-order accept (CLAUDE.md §40) can take less than the whole
+    // posted quantity — a retailer buying 20 lb out of a 500 lb listing
+    // shouldn't close the other 480 lb out of the marketplace. Before that
+    // feature, nothing in this app's UI ever let a retailer propose a
+    // different quantity than the full listing, so finalQuantity always
+    // equaled thread.listing.quantity and this was always a full close —
+    // this only changes behavior for the new partial case.
+    const remainingQuantity = thread.listing.quantity - finalQuantity;
+    const listingUpdateData =
+      remainingQuantity > 0 ? { quantity: remainingQuantity } : { status: "closed", quantity: 0 };
+
     const [, , deal] = await prisma.$transaction([
       prisma.offerThread.update({ where: { id: thread.id }, data: { status: "accepted" } }),
-      prisma.listing.update({ where: { id: thread.listingId }, data: { status: "closed" } }),
+      prisma.listing.update({ where: { id: thread.listingId }, data: listingUpdateData }),
       prisma.deal.create({
         data: {
           threadId: thread.id,
@@ -222,6 +233,20 @@ export async function addOfferRound(params: {
       `${actorLabel} accepted the deal on ${thread.listing.strainName} at $${finalPrice}/${thread.listing.unit}.`,
       thread.id
     );
+
+    // The Account Executive who built this listing isn't a party to the
+    // deal and bears no responsibility for whatever terms the grower
+    // agreed to (CLAUDE.md §40's disclaimer) — but they likely still want
+    // to know a non-default (non-cash) deal closed on a listing they
+    // relayed, since they're the one who originally connected the parties.
+    if (finalTerms !== "cash" && thread.listing.createdBySalesRepId) {
+      await notify(
+        thread.listing.createdBySalesRepId,
+        "cart_terms_approved",
+        `A deal on ${thread.listing.strainName} closed with "${finalTerms}" terms instead of cash — the grower approved this themselves.`,
+        thread.id
+      );
+    }
   }
 
   return round;

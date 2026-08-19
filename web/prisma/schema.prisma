@@ -66,6 +66,7 @@ model User {
   // still editable per lot. Only meaningful for role = retailer.
   defaultMarkupPercent Float?
 
+
   // Public order-ahead storefront (CLAUDE.md §25) — retailer-set, URL-safe
   // slug used in /order/<slug>. Deliberately NOT derived from or related to
   // anonHandle: anonHandle exists to hide identity across the wholesale
@@ -147,6 +148,8 @@ model User {
   ordersReceived             Order[]
   smsConnection              SmsConnection?
   marketingMessages          MarketingMessage[]
+  menuCollectionsCreated     MenuCollection[]
+  cartOrdersPlaced           CartOrder[]
 
   @@index([retailerOwnerId])
   @@index([assignedSalesRepId])
@@ -228,6 +231,18 @@ model Listing {
   pricePerUnit Float
   terms       String
   notes       String?
+
+  // Tiered wholesale pricing (CLAUDE.md §40) — a soft threshold, not a hard
+  // reject: a grower can still sell below their preferred order size, just
+  // at a different (typically higher) per-unit price. pricePerUnit above
+  // is what applies at minimumOrderQuantity or more; belowMinimumPricePerUnit
+  // applies to anything smaller. Both null/unset means no tiering at all —
+  // pricePerUnit is simply the price regardless of quantity, same as
+  // before this existed. Set by the grower/processor themselves, plain
+  // editable numbers like every other price field here, not a certified
+  // pricing engine.
+  minimumOrderQuantity     Float?
+  belowMinimumPricePerUnit Float?
 
   status    String   @default("active")
   expiresAt DateTime?
@@ -415,6 +430,69 @@ model ListingMedia {
   @@map("listing_media")
 }
 
+// A Sales Rep bundling several menus (each its own bulk-upload batch,
+// possibly from different growers they're assigned to) into one shareable
+// link (CLAUDE.md §40) — "an account rep has 14 menus from 14 different
+// growers, all 14 can be grouped and shared with one link." Purely a
+// browse-time grouping: batchIds is a plain list, not a foreign-keyed
+// join table, since a "menu" isn't its own row anywhere else either (see
+// Listing.batchId's comment) — this is consistent with that same
+// lightweight-grouping approach rather than inventing two different
+// patterns for the same idea.
+model MenuCollection {
+  id           String   @id @default(cuid())
+  salesRepId   String
+  salesRep     User     @relation(fields: [salesRepId], references: [id])
+  batchIds     String[]
+  createdAt    DateTime @default(now())
+
+  cartOrders CartOrder[]
+
+  @@map("menu_collections")
+}
+
+// Groups the several OfferThreads created from one multi-product cart
+// submission (CLAUDE.md §40) — a retailer opening a menu or collection
+// link, picking quantities across multiple products, and submitting once.
+// This is purely an organizational wrapper: each resulting OfferThread
+// still negotiates completely independently (accept/counter/reject one
+// line item without affecting the others), same Broker visibility, same
+// Deal/invoice/shipment machinery, nothing duplicated. See
+// OfferThread.cartOrderId's comment.
+model CartOrder {
+  id           String   @id @default(cuid())
+  retailerId   String
+  retailer     User     @relation(fields: [retailerId], references: [id])
+
+  // The collection link this order was placed from, if any (a cart order
+  // can also come from picking multiple products off one grower's own
+  // menu link, with no collection involved).
+  collectionId String?
+  collection   MenuCollection? @relation(fields: [collectionId], references: [id])
+
+  // What the retailer requested for every line in this cart — defaults to
+  // "cash" in the UI for smaller orders per the human's confirmed rule,
+  // but nothing here forces that: the seller on each individual line still
+  // has to actually accept these terms (or counter back to cash) through
+  // the ordinary per-thread negotiation, exactly like any other offer.
+  // This field is just what was originally requested, for reference.
+  requestedTerms String
+
+  // A Sales Rep facilitating this cart order (relaying it from a retailer
+  // who called them, same posture as every other AE-assisted flow in this
+  // app) must have the liability disclaimer shown and acknowledged before
+  // submitting — see components/cart/terms-disclaimer.tsx. Null when no
+  // AE was involved (the retailer submitted it themselves).
+  facilitatedBySalesRepId String?
+  disclaimerAcknowledgedAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  threads OfferThread[]
+
+  @@map("cart_orders")
+}
+
 // ---------- Negotiation ----------
 // One thread per (listing, retailer) pair. status: "open" | "accepted" | "rejected" | "expired"
 model OfferThread {
@@ -444,11 +522,22 @@ model OfferThread {
   retailerViewCount    Int       @default(0)
   retailerLastViewedAt DateTime?
 
+  // Set when this thread was opened as one line item of a multi-product
+  // cart order (CLAUDE.md §40) rather than a standalone single-listing
+  // offer — purely a grouping label for UI purposes. Every existing
+  // per-thread mechanic (accept/counter/reject, Deal creation, Broker
+  // visibility, notifications) is completely unchanged and still operates
+  // independently per thread; a cart order is several ordinary threads
+  // that happen to share this id, not a new state machine.
+  cartOrderId String?
+  cartOrder   CartOrder? @relation(fields: [cartOrderId], references: [id])
+
   rounds OfferRound[]
   deal   Deal?
 
   @@unique([listingId, retailerId])
   @@index([status])
+  @@index([cartOrderId])
   @@map("offer_threads")
 }
 
