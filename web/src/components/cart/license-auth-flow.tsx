@@ -37,6 +37,10 @@ export function LicenseAuthFlow({ onAuthenticated, onCancel }: { onAuthenticated
     const result = await checkRetailerLicense(licenseNumber);
     setPending(false);
     setCheckResult(result);
+    if (result.status === "rate_limited") {
+      setError("Too many attempts — try again in a minute.");
+      return;
+    }
     if (result.status === "not_found") {
       setError("No retailer license found for that number — double-check it, or contact the seller.");
       return;

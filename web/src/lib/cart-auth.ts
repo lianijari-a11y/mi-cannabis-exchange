@@ -1,11 +1,30 @@
 "use server";
 
 import bcrypt from "bcryptjs";
+import { headers } from "next/headers";
 import { AuthError } from "next-auth";
 import { signIn } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { generateAnonHandle } from "@/lib/anon-handle";
 import { lookupLicense } from "@/lib/license-registry";
+import { isRateLimited, clientIp } from "@/lib/rate-limit";
+
+// This whole file is reachable by a completely anonymous visitor — the
+// license-first flow's entire point is to work before an account exists —
+// making it the exact same class of surface §21 already flagged and fixed
+// for /api/license-lookup and the storefront order action: unauthenticated,
+// so no per-user throttling exists upstream, and each function is either a
+// registry-scraping vector or a write. Missed when this file was first
+// built (verified live end-to-end at the time, but never checked against
+// this specific gap) — caught in a follow-up pass. Same Postgres-backed
+// limiter as those other two, same reasoning for why in-memory wouldn't
+// hold (CLAUDE.md §21/§30).
+const LOOKUP_WINDOW_MS = 60_000;
+const LOOKUP_MAX = 20; // matches /api/license-lookup's own limit
+const SIGNIN_WINDOW_MS = 60_000;
+const SIGNIN_MAX = 8; // tighter — this is a password-guessing surface, not just a lookup
+const WRITE_WINDOW_MS = 60_000;
+const WRITE_MAX = 10; // matches the storefront order action's own write limit
 
 // The license-first inline sign-in flow for the public menu/collection
 // cart pages (components/cart/license-auth-flow.tsx) — the human's own
@@ -20,9 +39,15 @@ import { lookupLicense } from "@/lib/license-registry";
 export type LicenseCheckResult =
   | { status: "existing"; mustChangePassword: boolean }
   | { status: "new"; businessName: string }
-  | { status: "not_found" };
+  | { status: "not_found" }
+  | { status: "rate_limited" };
 
 export async function checkRetailerLicense(licenseNumberRaw: string): Promise<LicenseCheckResult> {
+  const ip = clientIp(await headers());
+  if (await isRateLimited("cart-auth-check", ip, LOOKUP_WINDOW_MS, LOOKUP_MAX)) {
+    return { status: "rate_limited" };
+  }
+
   const licenseNumber = licenseNumberRaw.trim();
   if (!licenseNumber) return { status: "not_found" };
 
@@ -45,6 +70,11 @@ export type CartAuthResult = { ok: true } | { ok: false; error: string };
 // email server-side and signs in with it; the client never needs to know
 // or ask for the email at all.
 export async function signInWithLicense(licenseNumberRaw: string, password: string): Promise<CartAuthResult> {
+  const ip = clientIp(await headers());
+  if (await isRateLimited("cart-auth-signin", ip, SIGNIN_WINDOW_MS, SIGNIN_MAX)) {
+    return { ok: false, error: "Too many attempts — try again in a minute." };
+  }
+
   const licenseNumber = licenseNumberRaw.trim();
   const user = await prisma.user.findFirst({ where: { role: "retailer", licenseNumber } });
   if (!user) return { ok: false, error: "No retailer account found for that license number." };
@@ -78,6 +108,11 @@ export async function setNewPasswordForLicense(
   newPassword: string,
   opts: { contactName?: string; email?: string }
 ): Promise<CartAuthResult> {
+  const ip = clientIp(await headers());
+  if (await isRateLimited("cart-auth-setpassword", ip, WRITE_WINDOW_MS, WRITE_MAX)) {
+    return { ok: false, error: "Too many attempts — try again in a minute." };
+  }
+
   const licenseNumber = licenseNumberRaw.trim();
   if (newPassword.length < 8) {
     return { ok: false, error: "Password must be at least 8 characters." };
