@@ -9,8 +9,7 @@ import { ROLE_LABELS, type Role } from "@/lib/constants";
 import { editListingForAccount } from "./actions";
 
 const NAV = [
-  { href: "/sales", label: "My activity" },
-  { href: "/sales/accounts", label: "My accounts" },
+  { href: "/sales", label: "My accounts" },
   { href: "/sales/listings/new", label: "Post for a seller" },
   { href: "/sales/earnings", label: "My earnings" },
   { href: "/sales/marketing", label: "Marketing suite" },
@@ -41,7 +40,7 @@ export default async function AccountDetailPage({
 
   return (
     <PortalShell roleLabel="Account Executive" navItems={NAV}>
-      <Link href="/sales/accounts" className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+      <Link href="/sales" className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
         ← Back to my accounts
       </Link>
 

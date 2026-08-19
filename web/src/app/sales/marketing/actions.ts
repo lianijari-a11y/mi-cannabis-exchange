@@ -13,8 +13,21 @@ import {
   type LeadListKey,
   type LeadDisposition,
 } from "@/lib/leads";
+import { lookupLeadContactInfo, applyLeadContactInfo } from "@/lib/lead-contact-lookup";
 
 const PATH = "/sales/marketing";
+
+export async function lookupContactAction(id: string) {
+  await requireRole("sales_rep");
+  return lookupLeadContactInfo(id);
+}
+
+export async function applyContactInfoAction(id: string, phone: string | null, email: string | null) {
+  await requireRole("sales_rep");
+  const result = await applyLeadContactInfo(id, phone, email);
+  revalidatePath(PATH);
+  return result;
+}
 
 export async function createLeadAction(formData: FormData) {
   const session = await requireRole("sales_rep");

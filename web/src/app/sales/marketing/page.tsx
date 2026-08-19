@@ -10,11 +10,12 @@ import {
   addNoteAction,
   deleteLeadAction,
   restoreLeadAction,
+  lookupContactAction,
+  applyContactInfoAction,
 } from "./actions";
 
 const NAV = [
-  { href: "/sales", label: "My activity" },
-  { href: "/sales/accounts", label: "My accounts" },
+  { href: "/sales", label: "My accounts" },
   { href: "/sales/listings/new", label: "Post for a seller" },
   { href: "/sales/earnings", label: "My earnings" },
   { href: "/sales/marketing", label: "Marketing suite" },
@@ -67,6 +68,8 @@ export default async function SalesMarketingPage({
           addNoteAction,
           deleteLeadAction,
           restoreLeadAction,
+          lookupContactAction,
+          applyContactInfoAction,
         }}
       />
     </PortalShell>

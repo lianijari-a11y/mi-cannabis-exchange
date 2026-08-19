@@ -10,6 +10,8 @@ import {
   addNoteAction,
   deleteLeadAction,
   restoreLeadAction,
+  lookupContactAction,
+  applyContactInfoAction,
 } from "./actions";
 
 const NAV = [
@@ -71,6 +73,8 @@ export default async function AdminMarketingPage({
           addNoteAction,
           deleteLeadAction,
           restoreLeadAction,
+          lookupContactAction,
+          applyContactInfoAction,
         }}
       />
     </PortalShell>

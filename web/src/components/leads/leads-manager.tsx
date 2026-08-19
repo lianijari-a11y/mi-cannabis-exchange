@@ -10,6 +10,7 @@ import {
 import { PowerDialer } from "./power-dialer";
 import { CallbackCalendar } from "./callback-calendar";
 import { LeadDashboard } from "./lead-dashboard";
+import { ContactLookupButton } from "./contact-lookup-button";
 
 type LeadActivity = { id: string; text: string; createdAt: string | Date };
 
@@ -87,6 +88,10 @@ export function LeadsManager({
     deleteLeadAction: (id: string) => Promise<void>;
     restoreLeadAction: (id: string) => Promise<void>;
     updateLeadAction: (id: string, fields: Record<string, unknown>) => Promise<void>;
+    lookupContactAction?: (
+      id: string
+    ) => Promise<{ ok: true; phone: string | null; email: string | null; source: string | null } | { ok: false; error: string }>;
+    applyContactInfoAction?: (id: string, phone: string | null, email: string | null) => Promise<{ ok: boolean; error?: string }>;
   };
 }) {
   const [search, setSearch] = useState("");
@@ -304,6 +309,19 @@ export function LeadsManager({
                   </span>
                 )}
               </div>
+
+              {(l.listKey === "mi_processors" || l.listKey === "mi_dispensaries") &&
+                (!l.phone || !l.email) &&
+                actions.lookupContactAction &&
+                actions.applyContactInfoAction && (
+                  <div className="mt-1.5">
+                    <ContactLookupButton
+                      leadId={l.id}
+                      lookupAction={actions.lookupContactAction}
+                      applyAction={actions.applyContactInfoAction}
+                    />
+                  </div>
+                )}
 
               {l.notes && <p className="text-xs text-gray-500 dark:text-gray-400 mt-1.5">{l.notes}</p>}
               {(l.license || l.licenseStatus) && (
