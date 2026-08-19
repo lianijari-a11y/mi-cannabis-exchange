@@ -103,10 +103,20 @@ export async function updateListing(
   removedMediaIds: string[],
   opts?: { bypassOwnership?: boolean }
 ) {
-  const listing = await prisma.listing.findUnique({ where: { id: listingId } });
+  const listing = await prisma.listing.findUnique({
+    where: { id: listingId },
+    include: { postedBy: { select: { assignedSalesRepId: true } } },
+  });
   if (!listing) throw new Error("Listing not found.");
   const authorized =
-    opts?.bypassOwnership || listing.postedById === callerId || listing.createdBySalesRepId === callerId;
+    opts?.bypassOwnership ||
+    listing.postedById === callerId ||
+    listing.createdBySalesRepId === callerId ||
+    // The Sales Rep currently assigned to this listing's seller (CLAUDE.md
+    // §38) can manage the seller's whole menu, not just listings they
+    // personally created — an account is dedicated to one rep, not just
+    // whatever that rep happened to post themselves.
+    listing.postedBy.assignedSalesRepId === callerId;
   if (!authorized) throw new Error("Not authorized for this listing.");
   if (listing.status !== "active") {
     throw new Error("Only an active listing can be edited.");
@@ -157,10 +167,16 @@ export async function updateListing(
 // Admin). getListingForSeller below stays strict to postedById only, since
 // that's the seller's own dashboard.
 export async function getListingForEdit(listingId: string, callerId: string, opts?: { bypassOwnership?: boolean }) {
-  const listing = await prisma.listing.findUnique({ where: { id: listingId }, include: { media: true } });
+  const listing = await prisma.listing.findUnique({
+    where: { id: listingId },
+    include: { media: true, postedBy: { select: { assignedSalesRepId: true } } },
+  });
   if (!listing) return null;
   const authorized =
-    opts?.bypassOwnership || listing.postedById === callerId || listing.createdBySalesRepId === callerId;
+    opts?.bypassOwnership ||
+    listing.postedById === callerId ||
+    listing.createdBySalesRepId === callerId ||
+    listing.postedBy.assignedSalesRepId === callerId;
   if (!authorized) return null;
   return listing;
 }

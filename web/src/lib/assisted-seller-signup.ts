@@ -5,6 +5,7 @@ import { requireAuth } from "@/lib/dal";
 import { prisma } from "@/lib/prisma";
 import { generateAnonHandle } from "@/lib/anon-handle";
 import { lookupLicense } from "@/lib/license-registry";
+import { markLeadAssignedRep } from "@/lib/leads";
 
 // A real Account Executive hit a real gap: the "post for a seller" flow
 // (lib/sales-actions.ts) can only post under an EXISTING Grower/Processor
@@ -158,8 +159,16 @@ export async function createAssistedSellerAccount(formData: FormData): Promise<C
       city: match.city ?? null,
       state: match.state ?? null,
       zip: match.zip ?? null,
+      // Building this account IS the first contact — a Sales Rep who
+      // creates it is immediately the assigned rep (CLAUDE.md §38). Admin
+      // creating one leaves it unclaimed; Admin isn't a rep in this model.
+      assignedSalesRepId: session.user.role === "sales_rep" ? session.user.id : null,
     },
   });
+
+  if (session.user.role === "sales_rep") {
+    await markLeadAssignedRep(seller.businessName, session.user.name ?? "").catch(() => {});
+  }
 
   return {
     ok: true,

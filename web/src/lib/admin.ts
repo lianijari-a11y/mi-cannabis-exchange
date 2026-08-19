@@ -53,7 +53,10 @@ export async function pendingLicenseUsers() {
 }
 
 export async function allUsers() {
-  return prisma.user.findMany({ orderBy: { createdAt: "desc" } });
+  return prisma.user.findMany({
+    include: { assignedSalesRep: { select: { businessName: true, fullName: true } } },
+    orderBy: { createdAt: "desc" },
+  });
 }
 
 export async function setLicenseVerification(

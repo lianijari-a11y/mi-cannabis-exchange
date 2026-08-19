@@ -4,6 +4,7 @@ import { salesForRep } from "@/lib/sales-actions";
 
 const NAV = [
   { href: "/sales", label: "My activity" },
+  { href: "/sales/accounts", label: "My accounts" },
   { href: "/sales/listings/new", label: "Post for a seller" },
   { href: "/sales/earnings", label: "My earnings" },
   { href: "/sales/marketing", label: "Marketing suite" },

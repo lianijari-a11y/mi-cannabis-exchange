@@ -181,6 +181,7 @@ export default async function AdminPage({
                   <th className="text-left px-4 py-2 font-medium">Role</th>
                   <th className="text-left px-4 py-2 font-medium">License status</th>
                   <th className="text-left px-4 py-2 font-medium">Handle</th>
+                  <th className="text-left px-4 py-2 font-medium">Assigned rep</th>
                   <th className="text-left px-4 py-2 font-medium">Rating</th>
                   <th className="text-left px-4 py-2 font-medium">Preferred</th>
                   <th className="text-left px-4 py-2 font-medium">Commission rate</th>
@@ -208,6 +209,11 @@ export default async function AdminPage({
                       )}
                     </td>
                     <td className="px-4 py-2 text-gray-400">{user.anonHandle}</td>
+                    <td className="px-4 py-2 text-gray-500 dark:text-gray-400">
+                      {user.assignedSalesRep
+                        ? user.assignedSalesRep.businessName ?? user.assignedSalesRep.fullName
+                        : (user.role === "grower" || user.role === "processor") ? "—" : ""}
+                    </td>
                     <td className="px-4 py-2 text-gray-600 dark:text-gray-300">
                       {ratings[i].score != null ? `★ ${ratings[i].score} (${ratings[i].count})` : "—"}
                     </td>

@@ -15,6 +15,40 @@ export {
 // Every sales_rep and admin sees every lead across every list (the human's
 // confirmed choice, not per-rep visibility silos).
 
+// Strips punctuation and common business-entity suffixes so "Forever Home
+// Grown, LLC" and "FOREVER HOME GROWN LLC" normalize to the same key — same
+// logic already used by scripts/enrich-license-registry-phone.mjs to join
+// the CRA registry and the Lead CRM export by name (the two datasets use
+// incompatible license-number schemes, see CLAUDE.md §36).
+function normalizeName(s: string | null | undefined): string {
+  return (s || "")
+    .toUpperCase()
+    .replace(/[.,'"]/g, "")
+    .replace(/\b(LLC|INC|CORP|CORPORATION|CO|COMPANY|LTD|LP|LLP)\b\.?/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// Once a Sales Rep is assigned to a Grower/Processor (CLAUDE.md §38), best-
+// effort note it on that business's own Lead Directory record too, so the
+// two views agree on who's working an account. Matched by normalized
+// business name — the only reliable join key across these two datasets —
+// so this is best-effort, not guaranteed: a name that doesn't match closely
+// enough (or isn't in the Lead Directory at all) silently finds nothing,
+// which is fine, since the User.assignedSalesRepId field is the actual
+// source of truth for the assignment itself; this is just a courtesy note.
+export async function markLeadAssignedRep(businessName: string | null, repName: string): Promise<void> {
+  const target = normalizeName(businessName);
+  if (!target) return;
+  const candidates = await prisma.lead.findMany({
+    where: { deleted: false },
+    select: { id: true, company: true },
+  });
+  const match = candidates.find((c) => normalizeName(c.company) === target);
+  if (!match) return;
+  await prisma.lead.update({ where: { id: match.id }, data: { assignedRepName: repName } });
+}
+
 export async function leadsForList(listKey: LeadListKey, includeDeleted = false) {
   return prisma.lead.findMany({
     where: { listKey, ...(includeDeleted ? {} : { deleted: false }) },

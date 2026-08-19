@@ -95,6 +95,20 @@ model User {
   retailerOwner   User?   @relation("RetailerStaff", fields: [retailerOwnerId], references: [id], onDelete: Cascade)
   staff           User[]  @relation("RetailerStaff")
 
+  // Exclusive Account Executive assignment (CLAUDE.md §38) — once any Sales
+  // Rep first works with a Grower/Processor (creates their account, or posts
+  // a listing for an unassigned one), that seller is locked to them; no
+  // other Sales Rep can post/edit for that seller after that. Only
+  // meaningful for role = grower/processor. Null means unclaimed — the next
+  // Sales Rep to work with them claims it. Admin is intentionally exempt
+  // from this lock (same unrestricted-reach posture as everywhere else
+  // Admin operates) — this is an AE-to-AE exclusivity rule, not an
+  // AE-vs-Admin one. SetNull on delete: removing a Sales Rep account
+  // shouldn't orphan-delete the growers they worked with, just free them up.
+  assignedSalesRepId String?
+  assignedSalesRep   User?   @relation("SalesRepAssignment", fields: [assignedSalesRepId], references: [id], onDelete: SetNull)
+  assignedSellers    User[]  @relation("SalesRepAssignment")
+
   // Stable anonymous handle shown to the counterparty across the blind
   // marketplace boundary, e.g. "Grower #A17". Generated once at signup,
   // never derived from the real name so it can't leak identity. Transporters
@@ -135,6 +149,7 @@ model User {
   marketingMessages          MarketingMessage[]
 
   @@index([retailerOwnerId])
+  @@index([assignedSalesRepId])
   @@map("users")
 }
 
