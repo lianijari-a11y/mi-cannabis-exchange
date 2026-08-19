@@ -7,6 +7,7 @@ import { editListing } from "./actions";
 
 const NAV = [
   { href: "/sales", label: "My accounts" },
+  { href: "/sales/orders", label: "Orders" },
   { href: "/sales/listings/new", label: "Post for a seller" },
   { href: "/sales/earnings", label: "My earnings" },
   { href: "/sales/marketing", label: "Marketing suite" },

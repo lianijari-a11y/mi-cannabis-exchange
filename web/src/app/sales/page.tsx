@@ -4,10 +4,13 @@ import { PortalShell } from "@/components/portal-shell";
 import { accountsForSalesRep } from "@/lib/sales-actions";
 import { StateMarketWidget } from "@/components/state-market-widget";
 import { ResetPasswordPanel } from "@/components/sales/reset-password-panel";
+import { BroadcastMenusButton } from "@/components/sales/broadcast-menus-button";
+import { broadcastMenusToRetailersAction, broadcastMenusToProcessorsAction } from "./actions";
 import { ROLE_LABELS, type Role } from "@/lib/constants";
 
 const NAV = [
   { href: "/sales", label: "My accounts" },
+  { href: "/sales/orders", label: "Orders" },
   { href: "/sales/listings/new", label: "Post for a seller" },
   { href: "/sales/earnings", label: "My earnings" },
   { href: "/sales/marketing", label: "Marketing suite" },
@@ -34,6 +37,8 @@ export default async function SalesRepPage() {
           >
             Share menus with a link
           </Link>
+          <BroadcastMenusButton label="Share with all retailers" action={broadcastMenusToRetailersAction} />
+          <BroadcastMenusButton label="Share with all processors" action={broadcastMenusToProcessorsAction} />
           <Link
             href="/sales/listings/new"
             className="bg-green-700 text-white rounded-lg px-3 py-1.5 text-sm font-medium"

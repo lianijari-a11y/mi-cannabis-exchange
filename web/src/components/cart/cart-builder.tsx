@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { Minus, Plus } from "lucide-react";
 import Link from "next/link";
 import { CATEGORY_LABELS, TERMS, TERMS_LABELS, type Category, type Terms } from "@/lib/constants";
 import { submitPublicCartOrder } from "@/lib/public-cart-actions";
@@ -28,6 +29,19 @@ type CartSeller = { anonHandle: string; listings: CartListing[] };
 // one ordinary OfferThread per selected product behind the scenes
 // (lib/cart-orders.ts), so nothing about how a seller responds to any one
 // of them is different from a normal single-listing offer.
+// The default quantities every listing starts at: the full amount the
+// seller listed — "the cart has 0 for each product, it should display the
+// full amount available as that is the wholesale offer to the retailer."
+// This is what makes "Accept offer" with nothing touched a genuine,
+// full-menu accept.
+function fullOfferQuantities(sellers: CartSeller[]): Record<string, string> {
+  const init: Record<string, string> = {};
+  for (const seller of sellers) {
+    for (const listing of seller.listings) init[listing.id] = String(listing.quantity);
+  }
+  return init;
+}
+
 export function CartBuilder({
   sellers,
   collectionId,
@@ -39,12 +53,27 @@ export function CartBuilder({
   sessionRole: string | null;
   callbackUrl: string;
 }) {
-  const [quantities, setQuantities] = useState<Record<string, string>>({});
-  const [terms, setTerms] = useState<Terms>("cash");
+  const [quantities, setQuantities] = useState<Record<string, string>>(() => fullOfferQuantities(sellers));
+  // Per-product price overrides for a counter-offer — "in a counter offer
+  // it should allow retailer to make an offer per product that is
+  // different than the one offered." Empty/absent means "use the
+  // seller's own price" (tiered price if this quantity qualifies); a
+  // present entry means the retailer has typed their own number for that
+  // line, which flows straight through as that line's CartItemInput.price.
+  const [priceOverrides, setPriceOverrides] = useState<Record<string, string>>({});
+  // Terms default to whatever the first listing already offers — matching
+  // it exactly is what lets "Accept offer" resolve to a true accept
+  // server-side (lib/cart-orders.ts compares requestedTerms against each
+  // listing's own terms) instead of silently becoming a counter on terms
+  // alone the instant the retailer hasn't touched anything.
+  const [terms, setTerms] = useState<Terms>(
+    (sellers[0]?.listings[0]?.terms as Terms) ?? "cash"
+  );
   const [result, setResult] = useState<{ ok: boolean; error?: string } | null>(null);
-  const [submitting, setSubmitting] = useState(false);
+  const [declined, setDeclined] = useState(false);
+  const [submitting, setSubmitting] = useState<"accept" | "counter" | null>(null);
 
-  function effectivePrice(listing: CartListing, qty: number): number {
+  function suggestedPrice(listing: CartListing, qty: number): number {
     if (
       listing.minimumOrderQuantity != null &&
       listing.belowMinimumPricePerUnit != null &&
@@ -56,6 +85,15 @@ export function CartBuilder({
     return listing.pricePerUnit;
   }
 
+  // The seller's own price unless the retailer typed a different one for
+  // this line — that override is a real per-product price counter-offer,
+  // not just a display value.
+  function effectivePrice(listing: CartListing, qty: number): number {
+    const override = priceOverrides[listing.id];
+    if (override !== undefined && override !== "") return Number(override);
+    return suggestedPrice(listing, qty);
+  }
+
   const items: CartItemInput[] = useMemo(() => {
     const out: CartItemInput[] = [];
     for (const seller of sellers) {
@@ -65,24 +103,86 @@ export function CartBuilder({
       }
     }
     return out;
-  }, [quantities, sellers]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quantities, priceOverrides, sellers]);
 
   const total = items.reduce((sum, i) => sum + i.quantity * i.price, 0);
 
-  async function submit() {
+  // Whether the cart, as it currently stands, still matches the seller's
+  // original offer exactly (full quantity, listing price, listing terms
+  // on every line) — drives which button reads as the "obvious" one, not
+  // a hard gate.
+  const matchesFullOffer = useMemo(() => {
+    for (const seller of sellers) {
+      for (const listing of seller.listings) {
+        const qty = Number(quantities[listing.id] ?? 0);
+        if (qty !== listing.quantity) return false;
+        if (listing.terms !== terms) return false;
+        const override = priceOverrides[listing.id];
+        if (override !== undefined && override !== "" && Number(override) !== listing.pricePerUnit) return false;
+      }
+    }
+    return true;
+  }, [quantities, terms, priceOverrides, sellers]);
+
+  function adjustQty(listingId: string, delta: number, max: number, step: number) {
+    setQuantities((q) => {
+      const current = Number(q[listingId] ?? 0);
+      const raw = current + delta * step;
+      const next = Math.min(Math.max(raw, 0), max);
+      return { ...q, [listingId]: String(Math.round(next * 100) / 100) };
+    });
+  }
+
+  async function doSubmit(kind: "accept" | "counter", itemsToSend: CartItemInput[], termsToSend: Terms) {
     setResult(null);
-    setSubmitting(true);
-    const r = await submitPublicCartOrder(collectionId, items, terms);
-    setSubmitting(false);
+    setSubmitting(kind);
+    const r = await submitPublicCartOrder(collectionId, itemsToSend, termsToSend);
+    setSubmitting(null);
     setResult(r.ok ? { ok: true } : { ok: false, error: r.error });
+  }
+
+  // "Accept offer" always submits the seller's full original menu — full
+  // quantity, listing price, listing terms on every line — regardless of
+  // whatever the retailer may have been fiddling with in the quantity
+  // boxes, so it's never ambiguous what clicking it does. Computed and
+  // sent directly rather than through setState-then-read, since a state
+  // setter's new value isn't visible until the next render.
+  function acceptOffer() {
+    const fullItems: CartItemInput[] = sellers.flatMap((seller) =>
+      seller.listings.map((listing) => ({
+        listingId: listing.id,
+        quantity: listing.quantity,
+        price: listing.pricePerUnit,
+      }))
+    );
+    const fullTerms = (sellers[0]?.listings[0]?.terms as Terms) ?? "cash";
+    setQuantities(fullOfferQuantities(sellers));
+    setPriceOverrides({});
+    setTerms(fullTerms);
+    doSubmit("accept", fullItems, fullTerms);
+  }
+
+  function counterOffer() {
+    doSubmit("counter", items, terms);
+  }
+
+  if (declined) {
+    return (
+      <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4">
+        <p className="text-sm text-gray-700 dark:text-gray-300">
+          You declined this offer. Nothing was sent — the seller isn&apos;t notified either way.
+        </p>
+      </div>
+    );
   }
 
   if (result?.ok) {
     return (
       <div className="rounded-xl border border-green-200 dark:border-green-900 bg-green-50 dark:bg-green-900/20 p-4">
         <p className="text-sm text-green-800 dark:text-green-300">
-          ✓ Order submitted — {items.length} product{items.length === 1 ? "" : "s"} sent to the
-          seller{sellers.length > 1 ? "s" : ""} for review.
+          ✓ {items.length} product{items.length === 1 ? "" : "s"} sent to the seller
+          {sellers.length > 1 ? "s" : ""} for review.
         </p>
         <Link href="/retailer/negotiations" className="text-xs text-green-700 dark:text-green-400 underline mt-1 inline-block">
           View your negotiations
@@ -103,10 +203,17 @@ export function CartBuilder({
               const tiered =
                 listing.minimumOrderQuantity != null &&
                 listing.belowMinimumPricePerUnit != null;
+              const step = listing.unit === "liter" ? 0.1 : 1;
+              const priceAdjusted = price !== suggestedPrice(listing, qty);
+              const adjusted = qty !== listing.quantity || priceAdjusted;
               return (
                 <div
                   key={listing.id}
-                  className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-3 flex items-center gap-3"
+                  className={`bg-white dark:bg-gray-900 border rounded-xl p-3 flex items-center gap-3 ${
+                    adjusted
+                      ? "border-amber-300 dark:border-amber-800"
+                      : "border-gray-200 dark:border-gray-800"
+                  }`}
                 >
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
@@ -115,7 +222,7 @@ export function CartBuilder({
                     <p className="text-xs text-gray-500 dark:text-gray-400">
                       {CATEGORY_LABELS[listing.category as Category] ?? listing.category}
                       {listing.thcPercent != null ? ` · ${listing.thcPercent}% THC` : ""} ·{" "}
-                      {listing.quantity} {listing.unit} available
+                      {listing.quantity} {listing.unit} offered
                     </p>
                     {tiered && (
                       <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-0.5">
@@ -123,21 +230,68 @@ export function CartBuilder({
                         {listing.unit}, ${listing.belowMinimumPricePerUnit}/{listing.unit} below that
                       </p>
                     )}
+                    {adjusted && (
+                      <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-0.5">
+                        {qty !== listing.quantity && priceAdjusted
+                          ? `Quantity and price adjusted from the seller's offer`
+                          : qty !== listing.quantity
+                            ? `Adjusted from the full ${listing.quantity} ${listing.unit} offered`
+                            : `Price adjusted from the seller's $${suggestedPrice(listing, qty)}/${listing.unit}`}{" "}
+                        — this line will go back as a counter-offer.
+                      </p>
+                    )}
                   </div>
                   <div className="text-right shrink-0">
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={quantities[listing.id] ?? ""}
-                      onChange={(e) =>
-                        setQuantities((q) => ({ ...q, [listing.id]: e.target.value }))
-                      }
-                      placeholder="0"
-                      className="w-20 border border-gray-300 dark:border-gray-700 rounded-lg px-2 py-1 text-sm text-right bg-transparent"
-                    />
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => adjustQty(listing.id, -1, listing.quantity, step)}
+                        className="w-7 h-7 flex items-center justify-center border border-gray-300 dark:border-gray-700 rounded-lg text-gray-600 dark:text-gray-300"
+                        aria-label={`Decrease ${listing.strainName} quantity`}
+                      >
+                        <Minus className="w-3 h-3" />
+                      </button>
+                      <input
+                        type="number"
+                        min="0"
+                        max={listing.quantity}
+                        step={step}
+                        value={quantities[listing.id] ?? ""}
+                        onChange={(e) =>
+                          setQuantities((q) => ({ ...q, [listing.id]: e.target.value }))
+                        }
+                        className="w-16 border border-gray-300 dark:border-gray-700 rounded-lg px-1 py-1 text-sm text-right bg-transparent"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => adjustQty(listing.id, 1, listing.quantity, step)}
+                        className="w-7 h-7 flex items-center justify-center border border-gray-300 dark:border-gray-700 rounded-lg text-gray-600 dark:text-gray-300"
+                        aria-label={`Increase ${listing.strainName} quantity`}
+                      >
+                        <Plus className="w-3 h-3" />
+                      </button>
+                    </div>
+                    <div className="flex items-center justify-end gap-1 mt-1">
+                      <span className="text-[11px] text-gray-400">$</span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={priceOverrides[listing.id] ?? String(suggestedPrice(listing, qty))}
+                        onChange={(e) =>
+                          setPriceOverrides((p) => ({ ...p, [listing.id]: e.target.value }))
+                        }
+                        className={`w-16 border rounded-lg px-1 py-0.5 text-xs text-right bg-transparent ${
+                          priceAdjusted
+                            ? "border-amber-300 dark:border-amber-800"
+                            : "border-gray-200 dark:border-gray-800"
+                        }`}
+                        aria-label={`${listing.strainName} price per ${listing.unit}`}
+                      />
+                      <span className="text-[11px] text-gray-400">/{listing.unit}</span>
+                    </div>
                     <p className="text-[11px] text-gray-400 mt-0.5">
-                      {qty > 0 ? `$${price}/${listing.unit} · $${(qty * price).toFixed(2)}` : `$${listing.pricePerUnit}/${listing.unit}`}
+                      {qty > 0 ? `$${(qty * price).toFixed(2)} total` : "—"}
                     </p>
                   </div>
                 </div>
@@ -182,14 +336,38 @@ export function CartBuilder({
         {result?.error && <p className="text-xs text-red-600 mb-2">{result.error}</p>}
 
         {sessionRole === "retailer" ? (
-          <button
-            type="button"
-            onClick={submit}
-            disabled={items.length === 0 || submitting}
-            className="w-full bg-green-700 text-white rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-50"
-          >
-            {submitting ? "Submitting…" : "Submit order"}
-          </button>
+          <div className="grid grid-cols-3 gap-2">
+            <button
+              type="button"
+              onClick={acceptOffer}
+              disabled={submitting !== null}
+              className="bg-green-700 text-white rounded-lg px-3 py-2 text-sm font-medium disabled:opacity-50"
+              title="Send the seller's full menu back exactly as offered"
+            >
+              {submitting === "accept" ? "Sending…" : "Accept offer"}
+            </button>
+            <button
+              type="button"
+              onClick={counterOffer}
+              disabled={items.length === 0 || submitting !== null || matchesFullOffer}
+              className="border border-green-700 text-green-700 dark:text-green-400 rounded-lg px-3 py-2 text-sm font-medium disabled:opacity-50"
+              title={
+                matchesFullOffer
+                  ? "Adjust a quantity, price tier, or terms above to counter"
+                  : "Send your adjusted quantities/terms as a counter-offer"
+              }
+            >
+              {submitting === "counter" ? "Sending…" : "Counter offer"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setDeclined(true)}
+              disabled={submitting !== null}
+              className="border border-gray-300 dark:border-gray-700 text-gray-600 dark:text-gray-300 rounded-lg px-3 py-2 text-sm font-medium disabled:opacity-50"
+            >
+              Reject
+            </button>
+          </div>
         ) : sessionRole ? (
           <p className="text-xs text-gray-500 dark:text-gray-400">
             This link is for Retailer accounts to place an order.

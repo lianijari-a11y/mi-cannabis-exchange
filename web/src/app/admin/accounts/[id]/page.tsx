@@ -2,46 +2,50 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireRole } from "@/lib/dal";
 import { PortalShell } from "@/components/portal-shell";
-import { accountDetailForSalesRep } from "@/lib/sales-actions";
+import { accountDetailForAdmin } from "@/lib/admin";
 import { MenuSection } from "@/components/sales/menu-section";
-import { InlineResetPassword } from "@/components/sales/inline-reset-password";
 import { ROLE_LABELS, type Role } from "@/lib/constants";
 import { editListingForAccount } from "./actions";
 
 const NAV = [
-  { href: "/sales", label: "My accounts" },
-  { href: "/sales/orders", label: "Orders" },
-  { href: "/sales/listings/new", label: "Post for a seller" },
-  { href: "/sales/earnings", label: "My earnings" },
-  { href: "/sales/marketing", label: "Marketing suite" },
+  { href: "/admin", label: "Overview" },
+  { href: "/admin/listings", label: "All listings" },
+  { href: "/admin/accounts", label: "Accounts" },
+  { href: "/admin/orders", label: "Orders" },
+  { href: "/admin/listings/new", label: "Post for a seller" },
+  { href: "/admin/staff/new", label: "Add staff account" },
+  { href: "/admin/sales-reps", label: "Account Executive earnings" },
+  { href: "/admin/data-uploads", label: "Data uploads" },
+  { href: "/admin/metrc", label: "METRC" },
+  { href: "/admin/system-health", label: "System health" },
+  { href: "/admin/marketing", label: "Marketing suite" },
 ];
 
-// One account's full profile + comprehensive menu (CLAUDE.md §38) — every
-// listing that grower/processor has ever posted, each independently
-// editable in place. This is the page the original request was actually
-// asking for: not a flat pile of individual strain listings, but "under
-// that client grower, you should be able to see the menu and the menu
-// should be editable."
-export default async function AccountDetailPage({
+// Admin's version of an Account Executive's account detail page
+// (CLAUDE.md §38/§42) — same profile + comprehensive-menu view, but
+// reachable for any Grower/Processor platform-wide, not just accounts
+// assigned to one rep. Password reset isn't duplicated here — Admin
+// already has that on /admin's own "All users" table (CLAUDE.md §37).
+export default async function AdminAccountDetailPage({
   params,
   searchParams,
 }: {
   params: Promise<{ id: string }>;
   searchParams: Promise<{ error?: string }>;
 }) {
-  const session = await requireRole("sales_rep");
+  await requireRole("admin");
   const { id } = await params;
   const { error } = await searchParams;
-  const detail = await accountDetailForSalesRep(session.user.id, id);
+  const detail = await accountDetailForAdmin(id);
   if (!detail) notFound();
   const { seller, menus } = detail;
   const sellerLabel = seller.businessName ?? seller.fullName;
   const totalListings = menus.reduce((n, m) => n + m.listings.length, 0);
 
   return (
-    <PortalShell roleLabel="Account Executive" navItems={NAV}>
-      <Link href="/sales" className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
-        ← Back to my accounts
+    <PortalShell roleLabel="Admin" navItems={NAV}>
+      <Link href="/admin/accounts" className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+        ← Back to accounts
       </Link>
 
       {error && (
@@ -65,9 +69,11 @@ export default async function AccountDetailPage({
             {[seller.address, seller.city, seller.state, seller.zip].filter(Boolean).join(", ")}
           </p>
         )}
-        <div className="mt-3">
-          <InlineResetPassword sellerId={seller.id} sellerLabel={sellerLabel} />
-        </div>
+        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+          {seller.assignedSalesRep
+            ? `Assigned to ${seller.assignedSalesRep.fullName}`
+            : "No Account Executive assigned"}
+        </p>
       </div>
 
       <div className="mt-6">
@@ -75,15 +81,7 @@ export default async function AccountDetailPage({
           Menus ({totalListings} product{totalListings === 1 ? "" : "s"} across {menus.length} menu
           {menus.length === 1 ? "" : "s"})
         </h2>
-        {menus.length === 0 && (
-          <p className="text-sm text-gray-500 dark:text-gray-400">
-            No listings yet.{" "}
-            <Link href="/sales/listings/new" className="text-green-700 dark:text-green-400 underline">
-              Post one for this seller
-            </Link>
-            .
-          </p>
-        )}
+        {menus.length === 0 && <p className="text-sm text-gray-500 dark:text-gray-400">No listings yet.</p>}
         <div className="space-y-3">
           {menus.map((menu) => (
             <MenuSection

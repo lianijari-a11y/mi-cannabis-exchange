@@ -12,6 +12,26 @@ type NotificationItem = {
   createdAt: Date | string;
 };
 
+// Notifications are plain text everywhere else in this app, but a menu
+// broadcast (lib/menu-broadcast.ts) embeds a real in-app path the
+// recipient needs to actually reach the link, not just read about it —
+// linkify just that one recognizable pattern rather than turning this
+// into a full rich-text renderer.
+function renderMessage(message: string) {
+  const match = message.match(/(\/(?:collection|menu)\/[A-Za-z0-9_-]+)/);
+  if (!match || match.index === undefined) return message;
+  const url = match[0];
+  return (
+    <>
+      {message.slice(0, match.index)}
+      <a href={url} className="text-primary underline">
+        {url}
+      </a>
+      {message.slice(match.index + url.length)}
+    </>
+  );
+}
+
 function timeAgo(ts: Date | string) {
   const ms = Date.now() - new Date(ts).getTime();
   const mins = Math.floor(ms / 60000);
@@ -73,7 +93,7 @@ export function NotificationBellClient({
                   n.read ? "" : "bg-primary-tint"
                 }`}
               >
-                <p className="text-ink-muted">{n.message}</p>
+                <p className="text-ink-muted">{renderMessage(n.message)}</p>
                 <p className="text-[10px] text-ink-faint mt-1">{timeAgo(n.createdAt)}</p>
               </div>
             ))

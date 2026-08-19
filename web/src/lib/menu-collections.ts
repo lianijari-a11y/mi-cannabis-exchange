@@ -12,20 +12,21 @@ export async function createMenuCollection(salesRepId: string, batchIds: string[
   return prisma.menuCollection.create({ data: { salesRepId, batchIds } });
 }
 
-// Every menu (batch) this rep's own assigned accounts have, so they can
-// pick which ones to bundle. Reuses the same account-assignment scoping as
-// accountsForSalesRep/accountDetailForSalesRep — an AE can only ever
-// collect menus belonging to sellers actually assigned to them.
-export async function menusForCollectionPicker(salesRepId: string) {
+// Shared by both pickers below — `sellerIds: null` means unscoped
+// (every Grower/Processor platform-wide, Admin's own reach), a real array
+// scopes to those sellers only (an AE's own assigned accounts).
+async function buildMenuPickerList(sellerIds: string[] | null) {
+  if (sellerIds && sellerIds.length === 0) return [];
+
   const sellers = await prisma.user.findMany({
-    where: { assignedSalesRepId: salesRepId },
+    where: sellerIds ? { id: { in: sellerIds } } : { role: { in: ["grower", "processor"] } },
     select: { id: true, businessName: true, fullName: true },
   });
-  const sellerIds = sellers.map((s) => s.id);
-  if (sellerIds.length === 0) return [];
+  const resolvedIds = sellers.map((s) => s.id);
+  if (resolvedIds.length === 0) return [];
 
   const listings = await prisma.listing.findMany({
-    where: { postedById: { in: sellerIds } },
+    where: { postedById: { in: resolvedIds } },
     select: { batchId: true, postedById: true, strainName: true, status: true, createdAt: true },
     orderBy: { createdAt: "desc" },
   });
@@ -57,8 +58,28 @@ export async function menusForCollectionPicker(salesRepId: string) {
     .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
 }
 
-export async function handleCreateMenuCollection(formData: FormData) {
-  const session = await requireRole("sales_rep");
+// Every menu (batch) this rep's own assigned accounts have, so they can
+// pick which ones to bundle. Reuses the same account-assignment scoping as
+// accountsForSalesRep/accountDetailForSalesRep — an AE can only ever
+// collect menus belonging to sellers actually assigned to them.
+export async function menusForCollectionPicker(salesRepId: string) {
+  const sellers = await prisma.user.findMany({
+    where: { assignedSalesRepId: salesRepId },
+    select: { id: true },
+  });
+  return buildMenuPickerList(sellers.map((s) => s.id));
+}
+
+// Admin's own version — platform-wide, every Grower/Processor's menus, not
+// just accounts assigned to one rep. Same unrestricted reach Admin already
+// has everywhere else in this app (see updateListing/getListingForEdit's
+// bypassOwnership).
+export async function menusForAdminCollectionPicker() {
+  return buildMenuPickerList(null);
+}
+
+export async function handleCreateMenuCollection(actorRole: "sales_rep" | "admin", formData: FormData) {
+  const session = await requireRole(actorRole);
   const batchIds = formData.getAll("batchId").map(String);
   const collection = await createMenuCollection(session.user.id, batchIds);
   return collection.id;

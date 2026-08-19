@@ -2,6 +2,7 @@ import "server-only";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { generateAnonHandle } from "@/lib/anon-handle";
+import { groupListingsIntoMenus } from "@/lib/sales-actions";
 
 // Added 2026-08-17 — Broker and Sales Rep were removed from public signup
 // (see CLAUDE.md and signup/actions.ts's SIGNUP_ROLES) after a security
@@ -190,6 +191,65 @@ export async function systemHealthSnapshot() {
     .sort((a, b) => b.count - a.count);
 
   return { voidedSales, currentlyRateLimited };
+}
+
+// Admin's own version of accountsForSalesRep (CLAUDE.md §38/§39) —
+// platform-wide, every Grower/Processor, not just accounts assigned to
+// one Account Executive. "Assigned rep" is surfaced here too so Admin can
+// see who (if anyone) is dedicated to each account, same oversight-not-a-
+// new-capability posture as the existing "Assigned rep" column on the
+// all-users table.
+export async function accountsForAdmin() {
+  return prisma.user.findMany({
+    where: { role: { in: ["grower", "processor"] } },
+    select: {
+      id: true,
+      businessName: true,
+      fullName: true,
+      email: true,
+      role: true,
+      licenseVerification: true,
+      assignedSalesRep: { select: { fullName: true } },
+      _count: { select: { listings: true } },
+    },
+    orderBy: { businessName: "asc" },
+  });
+}
+
+// Admin's version of accountDetailForSalesRep — no assignment check, so
+// any grower/processor's full profile + comprehensive menu is reachable,
+// matching Admin's unrestricted reach everywhere else in this app.
+export async function accountDetailForAdmin(sellerId: string) {
+  const seller = await prisma.user.findFirst({
+    where: { id: sellerId, role: { in: ["grower", "processor"] } },
+    select: {
+      id: true,
+      businessName: true,
+      fullName: true,
+      email: true,
+      phone: true,
+      role: true,
+      licenseNumber: true,
+      licenseType: true,
+      licenseVerification: true,
+      licenseExpiry: true,
+      address: true,
+      city: true,
+      state: true,
+      zip: true,
+      createdAt: true,
+      assignedSalesRep: { select: { fullName: true } },
+    },
+  });
+  if (!seller) return null;
+
+  const listings = await prisma.listing.findMany({
+    where: { postedById: sellerId },
+    include: { media: true },
+    orderBy: { createdAt: "desc" },
+  });
+
+  return { seller, menus: groupListingsIntoMenus(listings) };
 }
 
 export async function licenseExpiryAlerts() {

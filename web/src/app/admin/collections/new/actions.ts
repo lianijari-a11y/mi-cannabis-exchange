@@ -4,6 +4,6 @@ import { redirect } from "next/navigation";
 import { handleCreateMenuCollection } from "@/lib/menu-collections";
 
 export async function createCollectionAction(formData: FormData) {
-  const id = await handleCreateMenuCollection("sales_rep", formData);
-  redirect(`/sales/collections/${id}`);
+  const id = await handleCreateMenuCollection("admin", formData);
+  redirect(`/admin/collections/${id}`);
 }

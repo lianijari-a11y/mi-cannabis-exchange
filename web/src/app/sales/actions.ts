@@ -2,8 +2,17 @@
 
 import { requireRole } from "@/lib/dal";
 import { resetUserPassword } from "@/lib/account-management";
+import { broadcastAllMenus, type BroadcastTargetRole } from "@/lib/menu-broadcast";
 
 export type ResetPasswordActionResult = { ok: true } | { ok: false; error: string };
+
+export async function broadcastMenusToRetailersAction() {
+  return broadcastAllMenus("sales_rep", "retailer" as BroadcastTargetRole);
+}
+
+export async function broadcastMenusToProcessorsAction() {
+  return broadcastAllMenus("sales_rep", "processor" as BroadcastTargetRole);
+}
 
 // An Account Executive's side of "no self-serve forgot-password flow" — see
 // lib/account-management.ts's resetUserPassword. Scoped there to growers

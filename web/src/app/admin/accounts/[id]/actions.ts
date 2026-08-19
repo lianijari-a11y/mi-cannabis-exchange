@@ -3,5 +3,5 @@
 import { handleEditListingFromAccount } from "@/lib/sales-actions";
 
 export async function editListingForAccount(sellerId: string, formData: FormData) {
-  await handleEditListingFromAccount("sales_rep", "/sales/accounts", sellerId, formData);
+  await handleEditListingFromAccount("admin", "/admin/accounts", sellerId, formData);
 }

@@ -332,14 +332,21 @@ export async function handleEditListingAsAssistant(
 // Same edit logic, but for a listing edited inline from its seller's
 // Account page (CLAUDE.md §38) — redirects back to that account page
 // instead of a listing-specific one, since that's where the user actually
-// is. AE-only for now; Admin doesn't have an Accounts page yet.
-export async function handleEditListingFromAccount(sellerId: string, formData: FormData) {
-  const session = await requireRole("sales_rep");
-  const result = await applyListingEditAsAssistant("sales_rep", session.user.id, formData);
+// is. Shared by both the AE's own accounts page and Admin's platform-wide
+// equivalent (CLAUDE.md §42) — `accountsBasePath` is the only thing that
+// differs between the two.
+export async function handleEditListingFromAccount(
+  actorRole: "sales_rep" | "admin",
+  accountsBasePath: string,
+  sellerId: string,
+  formData: FormData
+) {
+  const session = await requireRole(actorRole);
+  const result = await applyListingEditAsAssistant(actorRole, session.user.id, formData);
   if (!result.ok) {
-    redirect(`/sales/accounts/${sellerId}?error=${encodeURIComponent(result.error)}`);
+    redirect(`${accountsBasePath}/${sellerId}?error=${encodeURIComponent(result.error)}`);
   }
-  redirect(`/sales/accounts/${sellerId}`);
+  redirect(`${accountsBasePath}/${sellerId}`);
 }
 
 // AE/Admin's own read of a listing to edit — same authorization as
@@ -400,7 +407,7 @@ export async function accountsForSalesRep(salesRepId: string) {
 type ListingWithMedia = Awaited<ReturnType<typeof prisma.listing.findMany<{ include: { media: true } }>>>[number];
 export type MenuGroup = { batchId: string; createdAt: Date; listings: ListingWithMedia[] };
 
-function groupListingsIntoMenus(listings: ListingWithMedia[]): MenuGroup[] {
+export function groupListingsIntoMenus(listings: ListingWithMedia[]): MenuGroup[] {
   const groups = new Map<string, MenuGroup>();
   for (const listing of listings) {
     const key = listing.batchId ?? listing.id;
