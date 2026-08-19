@@ -34,7 +34,8 @@ export async function createListing(
   postedByRole: string,
   input: NewListingInput,
   files: File[],
-  createdBySalesRepId?: string
+  createdBySalesRepId?: string,
+  batchId?: string
 ) {
   if (!SELLER_ROLES.includes(postedByRole as (typeof SELLER_ROLES)[number])) {
     throw new Error("Only growers, processors, and brokers can post listings.");
@@ -44,6 +45,13 @@ export async function createListing(
     data: {
       postedById,
       createdBySalesRepId: createdBySalesRepId ?? null,
+      // Every listing belongs to exactly one "menu" — a caller posting a
+      // single strain just gets a menu of 1, since there's no meaningful
+      // difference between that and a batch that happens to contain one
+      // item. Callers creating several listings from one form submission
+      // (bulk import) generate ONE batchId up front and pass it to every
+      // createListing call in that loop instead of leaving this default.
+      batchId: batchId ?? crypto.randomUUID(),
       strainName: input.strainName,
       category: input.category,
       thcPercent: input.thcPercent,

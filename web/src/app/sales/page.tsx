@@ -80,7 +80,7 @@ export default async function SalesRepPage() {
               {ROLE_LABELS[a.role as Role] ?? a.role} · {a.email}
             </p>
             <p className="text-xs text-gray-400 mt-1">
-              {a._count.listings} listing{a._count.listings === 1 ? "" : "s"} in their menu
+              {a._count.listings} listing{a._count.listings === 1 ? "" : "s"} across their menus
             </p>
           </Link>
         ))}

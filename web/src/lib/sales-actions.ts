@@ -194,6 +194,10 @@ export async function handleCreateListingsAsAssistantBulk(
   // Every row was already editable/removable in the review table, so an
   // invalid row here means the client-side "Post all" guard was bypassed —
   // skip it rather than fail the whole batch over one bad row.
+  // One batchId shared across every row in this submission — this whole
+  // paste is one "menu," not N unrelated listings (see schema.prisma's
+  // comment on Listing.batchId).
+  const batchId = crypto.randomUUID();
   let created = 0;
   for (const d of drafts) {
     const strainName = typeof d?.strainName === "string" ? d.strainName.trim() : "";
@@ -226,7 +230,8 @@ export async function handleCreateListingsAsAssistantBulk(
         expiresAt,
       },
       files,
-      session.user.id
+      session.user.id,
+      batchId
     );
     created++;
   }
@@ -380,6 +385,32 @@ export async function accountsForSalesRep(salesRepId: string) {
 // "click into a grower and see/edit their comprehensive menu" view.
 // Scoped to accounts actually assigned to this rep; returns null otherwise
 // (never leaks another rep's account through a guessed id).
+// Groups a seller's listings into "menus" — every listing created in one
+// form submission (batchId, see schema.prisma) is one menu, whether that
+// was a single strain or a whole bulk-imported price list. A listing with
+// no batchId (created before that field existed) falls back to its own
+// singleton group, since there's no reliable way to tell which older ones
+// were originally uploaded together — see scripts/backfill-listing-batches.mjs
+// for the one-time attempt to infer real groups for existing data instead
+// of leaving them all as singletons.
+type ListingWithMedia = Awaited<ReturnType<typeof prisma.listing.findMany<{ include: { media: true } }>>>[number];
+export type MenuGroup = { batchId: string; createdAt: Date; listings: ListingWithMedia[] };
+
+function groupListingsIntoMenus(listings: ListingWithMedia[]): MenuGroup[] {
+  const groups = new Map<string, MenuGroup>();
+  for (const listing of listings) {
+    const key = listing.batchId ?? listing.id;
+    const existing = groups.get(key);
+    if (existing) {
+      existing.listings.push(listing);
+      if (listing.createdAt < existing.createdAt) existing.createdAt = listing.createdAt;
+    } else {
+      groups.set(key, { batchId: key, createdAt: listing.createdAt, listings: [listing] });
+    }
+  }
+  return Array.from(groups.values()).sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+}
+
 export async function accountDetailForSalesRep(salesRepId: string, sellerId: string) {
   const seller = await prisma.user.findFirst({
     where: { id: sellerId, assignedSalesRepId: salesRepId },
@@ -409,7 +440,7 @@ export async function accountDetailForSalesRep(salesRepId: string, sellerId: str
     orderBy: { createdAt: "desc" },
   });
 
-  return { seller, listings };
+  return { seller, menus: groupListingsIntoMenus(listings) };
 }
 
 // Deals closed from a Sales Rep's own listings, with their commission

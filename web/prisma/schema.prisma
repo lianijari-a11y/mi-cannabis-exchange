@@ -209,6 +209,17 @@ model Listing {
   createdBySalesRepId String?
   createdBySalesRep   User?   @relation("ListingCreatedBySalesRep", fields: [createdBySalesRepId], references: [id])
 
+  // Groups every Listing created in one form submission into a single
+  // "menu" — a seller who posts one strain at a time gets a menu of 1, a
+  // bulk price-list import gets one menu with all N strains in it, and a
+  // seller who bulk-imports again next week gets a SECOND, separate menu.
+  // Generated once per submission (lib/listings.ts's createListing) and
+  // stamped on every row that submission creates — never reused across two
+  // separate submissions, even from the same seller. Nullable only because
+  // listings created before this field existed don't have one; see
+  // scripts/backfill-listing-batches.mjs for how those were inferred.
+  batchId String?
+
   strainName  String
   category    String
   thcPercent  Float?
@@ -249,6 +260,7 @@ model Listing {
   productRequestResponses ProductRequestResponse[]
 
   @@index([status])
+  @@index([batchId])
   @@map("listings")
 }
 

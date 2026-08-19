@@ -33,10 +33,9 @@ export default async function AccountDetailPage({
   const { error } = await searchParams;
   const detail = await accountDetailForSalesRep(session.user.id, id);
   if (!detail) notFound();
-  const { seller, listings } = detail;
+  const { seller, menus } = detail;
   const sellerLabel = seller.businessName ?? seller.fullName;
-  const active = listings.filter((l) => l.status === "active");
-  const inactive = listings.filter((l) => l.status !== "active");
+  const totalListings = menus.reduce((n, m) => n + m.listings.length, 0);
 
   return (
     <PortalShell roleLabel="Account Executive" navItems={NAV}>
@@ -72,9 +71,10 @@ export default async function AccountDetailPage({
 
       <div className="mt-6">
         <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-2">
-          Menu ({active.length} active{inactive.length > 0 ? `, ${inactive.length} other` : ""})
+          Menus ({totalListings} product{totalListings === 1 ? "" : "s"} across {menus.length} menu
+          {menus.length === 1 ? "" : "s"})
         </h2>
-        {listings.length === 0 && (
+        {menus.length === 0 && (
           <p className="text-sm text-gray-500 dark:text-gray-400">
             No listings yet.{" "}
             <Link href="/sales/listings/new" className="text-green-700 dark:text-green-400 underline">
@@ -83,14 +83,37 @@ export default async function AccountDetailPage({
             .
           </p>
         )}
-        <div className="space-y-3">
-          {listings.map((listing) => (
-            <AccountMenuItem
-              key={listing.id}
-              listing={listing}
-              editAction={editListingForAccount.bind(null, seller.id)}
-            />
-          ))}
+        <div className="space-y-6">
+          {menus.map((menu) => {
+            const active = menu.listings.filter((l) => l.status === "active").length;
+            return (
+              <div key={menu.batchId}>
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-xs uppercase tracking-wide text-gray-400">
+                    Menu uploaded{" "}
+                    {menu.createdAt.toLocaleDateString(undefined, {
+                      month: "short",
+                      day: "numeric",
+                      year: "numeric",
+                    })}
+                  </h3>
+                  <span className="text-[11px] text-gray-400">
+                    {menu.listings.length} product{menu.listings.length === 1 ? "" : "s"}
+                    {active < menu.listings.length ? ` · ${active} active` : ""}
+                  </span>
+                </div>
+                <div className="space-y-3">
+                  {menu.listings.map((listing) => (
+                    <AccountMenuItem
+                      key={listing.id}
+                      listing={listing}
+                      editAction={editListingForAccount.bind(null, seller.id)}
+                    />
+                  ))}
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
     </PortalShell>
