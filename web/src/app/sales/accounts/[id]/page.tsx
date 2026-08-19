@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { requireRole } from "@/lib/dal";
 import { PortalShell } from "@/components/portal-shell";
 import { accountDetailForSalesRep } from "@/lib/sales-actions";
-import { AccountMenuItem } from "@/components/sales/account-menu-item";
+import { MenuSection } from "@/components/sales/menu-section";
 import { InlineResetPassword } from "@/components/sales/inline-reset-password";
 import { ROLE_LABELS, type Role } from "@/lib/constants";
 import { editListingForAccount } from "./actions";
@@ -83,37 +83,20 @@ export default async function AccountDetailPage({
             .
           </p>
         )}
-        <div className="space-y-6">
-          {menus.map((menu) => {
-            const active = menu.listings.filter((l) => l.status === "active").length;
-            return (
-              <div key={menu.batchId}>
-                <div className="flex items-center justify-between mb-2">
-                  <h3 className="text-xs uppercase tracking-wide text-gray-400">
-                    Menu uploaded{" "}
-                    {menu.createdAt.toLocaleDateString(undefined, {
-                      month: "short",
-                      day: "numeric",
-                      year: "numeric",
-                    })}
-                  </h3>
-                  <span className="text-[11px] text-gray-400">
-                    {menu.listings.length} product{menu.listings.length === 1 ? "" : "s"}
-                    {active < menu.listings.length ? ` · ${active} active` : ""}
-                  </span>
-                </div>
-                <div className="space-y-3">
-                  {menu.listings.map((listing) => (
-                    <AccountMenuItem
-                      key={listing.id}
-                      listing={listing}
-                      editAction={editListingForAccount.bind(null, seller.id)}
-                    />
-                  ))}
-                </div>
-              </div>
-            );
-          })}
+        <div className="space-y-3">
+          {menus.map((menu) => (
+            <MenuSection
+              key={menu.batchId}
+              batchId={menu.batchId}
+              uploadedLabel={menu.createdAt.toLocaleDateString(undefined, {
+                month: "short",
+                day: "numeric",
+                year: "numeric",
+              })}
+              listings={menu.listings}
+              editAction={editListingForAccount.bind(null, seller.id)}
+            />
+          ))}
         </div>
       </div>
     </PortalShell>

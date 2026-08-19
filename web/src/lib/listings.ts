@@ -345,4 +345,34 @@ export async function publicListingView(listingId: string) {
   });
 }
 
+// The whole-menu counterpart to publicListingView above (CLAUDE.md §40) —
+// a shareable link for an entire bulk-uploaded batch, not just one strain.
+// Same public-view rules apply per listing: only status "active" AND
+// visibility "all" rows are included, so an Admin-restricted exclusive
+// listing inside an otherwise-shareable batch is silently left out rather
+// than exposed. Returns null (not an empty array) when NOTHING in the
+// batch qualifies, so the caller can render a clean "not available"
+// state instead of an empty menu page.
+export async function publicMenuView(batchId: string) {
+  await expireStaleListings();
+  const listings = await prisma.listing.findMany({
+    where: { batchId, status: "active", visibility: "all" },
+    select: {
+      id: true,
+      strainName: true,
+      category: true,
+      thcPercent: true,
+      quantity: true,
+      unit: true,
+      pricePerUnit: true,
+      terms: true,
+      media: true,
+      postedBy: { select: { anonHandle: true } },
+    },
+    orderBy: { strainName: "asc" },
+  });
+  if (listings.length === 0) return null;
+  return { batchId, postedByHandle: listings[0].postedBy.anonHandle, listings };
+}
+
 export { generateAnonHandle };
