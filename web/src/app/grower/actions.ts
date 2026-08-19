@@ -2,6 +2,6 @@
 
 import { handleBulkAddPhotos } from "@/lib/seller-actions";
 
-export async function bulkAddPhotosAction(batchId: string, assignments: { listingId: string; file: File }[]) {
+export async function bulkAddPhotosAction(batchId: string, assignments: { listingId: string; url: string; contentType: string }[]) {
   return handleBulkAddPhotos("grower", batchId, assignments);
 }

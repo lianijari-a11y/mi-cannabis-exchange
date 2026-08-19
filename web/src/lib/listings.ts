@@ -1,7 +1,7 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
 import { generateAnonHandle } from "@/lib/anon-handle";
-import { saveMediaFile } from "@/lib/media";
+import { saveMediaFile, finalizeUploadedMedia } from "@/lib/media";
 import type { Category, Terms, Unit } from "@/lib/constants";
 import { SELLER_ROLES } from "@/lib/constants";
 
@@ -187,7 +187,7 @@ export async function updateListing(
 export async function bulkAddMediaToMenu(
   batchId: string,
   callerId: string,
-  assignments: { listingId: string; file: File }[],
+  assignments: { listingId: string; url: string; contentType: string }[],
   opts?: { bypassOwnership?: boolean }
 ): Promise<{ ok: true; savedCount: number } | { ok: false; error: string }> {
   if (assignments.length === 0) return { ok: false, error: "No photos to save." };
@@ -200,8 +200,8 @@ export async function bulkAddMediaToMenu(
   const listingById = new Map(listings.map((l) => [l.id, l]));
 
   let savedCount = 0;
-  for (const { listingId, file } of assignments) {
-    if (!file || file.size === 0) continue;
+  for (const { listingId, url, contentType } of assignments) {
+    if (!url) continue;
     const listing = listingById.get(listingId);
     if (!listing || listing.status !== "active") continue;
     const authorized =
@@ -212,7 +212,7 @@ export async function bulkAddMediaToMenu(
     if (!authorized) continue;
 
     const remainingCount = await prisma.listingMedia.count({ where: { listingId } });
-    const saved = await saveMediaFile(listingId, file);
+    const saved = await finalizeUploadedMedia(url, contentType);
     await prisma.listingMedia.create({
       data: {
         listingId,

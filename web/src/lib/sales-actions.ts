@@ -357,7 +357,7 @@ export async function handleEditListingFromAccount(
 export async function bulkAddPhotosAsAssistant(
   actorRole: "sales_rep" | "admin",
   batchId: string,
-  assignments: { listingId: string; file: File }[]
+  assignments: { listingId: string; url: string; contentType: string }[]
 ) {
   const session = await requireRole(actorRole);
   return bulkAddMediaToMenu(batchId, session.user.id, assignments, { bypassOwnership: actorRole === "admin" });

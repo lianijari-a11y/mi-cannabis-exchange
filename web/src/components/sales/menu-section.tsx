@@ -44,7 +44,7 @@ export function MenuSection({
   // differently-scoped copy of BulkPhotoUpload directly.
   bulkPhotoSaveAction?: (
     batchId: string,
-    assignments: { listingId: string; file: File }[]
+    assignments: { listingId: string; url: string; contentType: string }[]
   ) => Promise<{ ok: true; savedCount: number } | { ok: false; error: string }>;
 }) {
   const [open, setOpen] = useState(false);

@@ -30,7 +30,7 @@ export function DashboardMenuGroup({
   productCount: number;
   activeCount: number;
   activeListings: ListingOption[];
-  saveAction: (batchId: string, assignments: { listingId: string; file: File }[]) => Promise<SaveResult>;
+  saveAction: (batchId: string, assignments: { listingId: string; url: string; contentType: string }[]) => Promise<SaveResult>;
   defaultOpen: boolean;
   children: React.ReactNode;
 }) {

@@ -253,7 +253,7 @@ export async function handleRequireReturnInsteadOfCounter(role: SellerRole, form
 export async function handleBulkAddPhotos(
   role: SellerRole,
   batchId: string,
-  assignments: { listingId: string; file: File }[]
+  assignments: { listingId: string; url: string; contentType: string }[]
 ) {
   const session = await requireRole(role);
   return bulkAddMediaToMenu(batchId, session.user.id, assignments);

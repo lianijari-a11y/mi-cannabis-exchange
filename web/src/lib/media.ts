@@ -1,5 +1,5 @@
 import "server-only";
-import { put } from "@vercel/blob";
+import { put, del } from "@vercel/blob";
 import path from "path";
 import { attemptRedaction } from "@/lib/media-redaction";
 
@@ -77,4 +77,61 @@ export async function saveDocumentFile(key: string, file: File): Promise<string>
 
   const buffer = Buffer.from(await file.arrayBuffer());
   return uploadToBlob(key, file, buffer, isPdf ? ".pdf" : ".jpg");
+}
+
+// The other half of client-direct upload (see /api/blob-upload) — the
+// browser already uploaded the raw file straight to Blob storage, so this
+// only ever handles a small URL string, never file bytes, which is what
+// lets a real video clear a Server Action's body-size cap at all. Images
+// still get the same best-effort redaction pass as before: fetching the
+// blob back down is an outbound GET a server function makes freely (not
+// subject to bodySizeLimit, which only governs an *incoming* request
+// body), and if a region is found, the redacted version is uploaded to a
+// fresh blob and the original is deleted.
+export async function finalizeUploadedMedia(
+  blobUrl: string,
+  contentType: string
+): Promise<{
+  url: string;
+  type: "image" | "video";
+  redactionAttempted: boolean;
+  redactionRegionsFound: number;
+  redactionError?: string;
+}> {
+  const isVideo = contentType.startsWith("video/");
+  const isImage = contentType.startsWith("image/");
+  if (!isVideo && !isImage) {
+    throw new Error(`Unsupported media type: ${contentType || "unknown"}`);
+  }
+
+  if (!isImage) {
+    return { url: blobUrl, type: "video", redactionAttempted: false, redactionRegionsFound: 0 };
+  }
+
+  const response = await fetch(blobUrl);
+  if (!response.ok) {
+    throw new Error("Couldn't retrieve the uploaded file.");
+  }
+  const original = Buffer.from(await response.arrayBuffer());
+  const result = await attemptRedaction(original, contentType);
+
+  let finalUrl = blobUrl;
+  if (result.regionsFound > 0) {
+    const ext = path.extname(new URL(blobUrl).pathname) || ".jpg";
+    const pathname = `redacted/${Date.now()}-${Math.random().toString(36).slice(2, 8)}${ext}`;
+    const redactedBlob = await put(pathname, result.buffer, { access: "public", contentType });
+    finalUrl = redactedBlob.url;
+    await del(blobUrl).catch(() => {
+      // Best-effort cleanup of the now-superseded unredacted upload —
+      // never blocks on it, the redacted URL is already what matters.
+    });
+  }
+
+  return {
+    url: finalUrl,
+    type: "image",
+    redactionAttempted: result.attempted,
+    redactionRegionsFound: result.regionsFound,
+    redactionError: result.error,
+  };
 }

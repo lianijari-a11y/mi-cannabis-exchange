@@ -15,7 +15,7 @@ export async function SellerDashboard({
   basePath: string;
   bulkPhotoSaveAction?: (
     batchId: string,
-    assignments: { listingId: string; file: File }[]
+    assignments: { listingId: string; url: string; contentType: string }[]
   ) => Promise<{ ok: true; savedCount: number } | { ok: false; error: string }>;
 }) {
   const listings = await listingsForSeller(sellerId);
