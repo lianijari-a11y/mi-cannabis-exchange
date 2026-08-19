@@ -8,18 +8,22 @@ type ListingOption = { id: string; strainName: string; pricePerUnit: number; qua
 type PriceAdjustment =
   | { mode: "percent"; value: number }
   | { mode: "dollar"; value: number }
-  | { mode: "targetTotal"; value: number };
+  | { mode: "targetTotal"; value: number }
+  | { mode: "setPrice"; value: number };
 type SaveResult = { ok: true; updatedCount: number } | { ok: false; error: string };
 
 const money = (n: number) => n.toLocaleString(undefined, { style: "currency", currency: "USD" });
 
 // "Need a way to do bulk price change, by percentage, or dollar amount"
 // — plus a follow-up the same conversation: "a total dollar amount for
-// the entire menu, without having to go product by product." Three modes,
-// one tool. Percent/dollar move every price the same way; target-total
-// scales every price by the same factor so the new sum lands on the
-// requested total (proportional, not an equal split across products —
-// see lib/listings.ts's bulkUpdatePricing for why).
+// the entire menu, without having to go product by product," and later
+// "change pricing based on a percentage or change to a set price on all."
+// Four modes, one tool. Percent/dollar move every price relative to what
+// it already was; set-price overrides every selected line to the exact
+// same number regardless of its old price; target-total scales every
+// price by the same factor so the new sum lands on the requested total
+// (proportional, not an equal split across products — see
+// lib/listings.ts's bulkUpdatePricing for why).
 //
 // A later follow-up, once a real 34-product menu was being managed this
 // way: "if there are 34 products and I feel like updating pricing I
@@ -56,14 +60,22 @@ export function BulkPriceUpdate({
 
   const numValue = Number(value);
   const validValue =
-    value.trim() !== "" && Number.isFinite(numValue) && (mode !== "targetTotal" || numValue > 0) && !noneSelected;
+    value.trim() !== "" &&
+    Number.isFinite(numValue) &&
+    (mode !== "targetTotal" || numValue > 0) &&
+    (mode !== "setPrice" || numValue > 0) &&
+    !noneSelected;
 
   const previewTotal = useMemo(() => {
     if (!validValue) return currentTotal;
     if (mode === "targetTotal") return numValue;
     return selectedListings.reduce((sum, l) => {
       const newPrice =
-        mode === "percent" ? l.pricePerUnit * (1 + numValue / 100) : l.pricePerUnit + numValue;
+        mode === "percent"
+          ? l.pricePerUnit * (1 + numValue / 100)
+          : mode === "dollar"
+            ? l.pricePerUnit + numValue
+            : numValue; // setPrice — every selected line goes to the same exact number
       return sum + Math.max(0.01, newPrice) * l.quantity;
     }, 0);
   }, [selectedListings, mode, numValue, validValue, currentTotal]);
@@ -130,6 +142,7 @@ export function BulkPriceUpdate({
           [
             { key: "percent", label: "Percentage" },
             { key: "dollar", label: "Dollar amount" },
+            { key: "setPrice", label: "Set price" },
             { key: "targetTotal", label: "Target total for menu" },
           ] as const
         ).map((m) => (
@@ -164,9 +177,9 @@ export function BulkPriceUpdate({
               ? "e.g. 10 for +10%, -10 for -10%"
               : mode === "dollar"
                 ? "e.g. 5 for +$5/unit, -5 for -$5/unit"
-                : mode === "targetTotal"
-                  ? "e.g. 50000"
-                  : ""
+                : mode === "setPrice"
+                  ? "e.g. 150 to set every selected product to $150/unit"
+                  : "e.g. 50000"
           }
           className="flex-1 border border-gray-300 dark:border-gray-700 rounded-lg px-3 py-2 text-sm bg-transparent"
         />

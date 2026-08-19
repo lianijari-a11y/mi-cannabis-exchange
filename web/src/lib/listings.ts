@@ -244,7 +244,8 @@ export async function bulkAddMediaToMenu(
 export type PriceAdjustment =
   | { mode: "percent"; value: number } // e.g. 10 = +10%, -15 = -15%
   | { mode: "dollar"; value: number } // flat $ per unit, +/-
-  | { mode: "targetTotal"; value: number }; // desired sum of price*quantity across the whole menu
+  | { mode: "targetTotal"; value: number } // desired sum of price*quantity across the whole menu
+  | { mode: "setPrice"; value: number }; // set every selected listing's price per unit to this exact number, overriding whatever it was
 
 export async function bulkUpdatePricing(
   batchId: string,
@@ -292,6 +293,10 @@ export async function bulkUpdatePricing(
     scaleFactor = adjustment.value / currentTotal;
   }
 
+  if (adjustment.mode === "setPrice" && adjustment.value <= 0) {
+    return { ok: false, error: "Price must be greater than $0." };
+  }
+
   let updatedCount = 0;
   for (const listing of eligible) {
     let newPrice: number;
@@ -299,6 +304,8 @@ export async function bulkUpdatePricing(
       newPrice = listing.pricePerUnit * (1 + adjustment.value / 100);
     } else if (adjustment.mode === "dollar") {
       newPrice = listing.pricePerUnit + adjustment.value;
+    } else if (adjustment.mode === "setPrice") {
+      newPrice = adjustment.value;
     } else {
       newPrice = listing.pricePerUnit * scaleFactor;
     }

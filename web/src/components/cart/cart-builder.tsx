@@ -6,6 +6,9 @@ import Link from "next/link";
 import { CATEGORY_LABELS, TERMS, TERMS_LABELS, type Category, type Terms } from "@/lib/constants";
 import { submitPublicCartOrder } from "@/lib/public-cart-actions";
 import { LicenseAuthFlow } from "@/components/cart/license-auth-flow";
+import { RetailerPicker } from "@/components/shared/retailer-picker";
+import { TermsDisclaimer } from "@/components/cart/terms-disclaimer";
+import { CartBulkPriceAdjust } from "@/components/cart/cart-bulk-price-adjust";
 import type { CartItemInput } from "@/lib/cart-orders";
 
 type Media = { id: string; url: string; type: string };
@@ -87,6 +90,19 @@ export function CartBuilder({
   const [pendingAction, setPendingAction] = useState<"accept" | "counter" | null>(null);
   const [justAuthenticated, setJustAuthenticated] = useState(false);
   const isRetailer = sessionRole === "retailer" || justAuthenticated;
+  // "So can account executives and admin" — an AE/Admin can now also
+  // submit through this same cart page on a retailer's behalf, mirroring
+  // the single-listing respond flow's admin/AE-assisted picker (§36/
+  // §49-C). `assistedRetailer` is the resolved (found-or-created) account
+  // they're acting for; an AE additionally has to acknowledge the same
+  // liability disclaimer §41 already requires before building a
+  // shareable collection link, since submitting a cart order on someone's
+  // behalf is the same kind of AE-facilitated event.
+  const isAssistant = sessionRole === "admin" || sessionRole === "sales_rep";
+  const [assistedRetailer, setAssistedRetailer] = useState<{ id: string; businessName: string } | null>(null);
+  const [disclaimerAcknowledged, setDisclaimerAcknowledged] = useState(false);
+  const canAct =
+    isRetailer || (isAssistant && !!assistedRetailer && (sessionRole !== "sales_rep" || disclaimerAcknowledged));
 
   function suggestedPrice(listing: CartListing, qty: number): number {
     if (
@@ -140,6 +156,44 @@ export function CartBuilder({
     return true;
   }, [quantities, terms, priceOverrides, sellers]);
 
+  // Flattened, current-state view of every line for the bulk-adjust tool
+  // — "the buyers should be able to bulk adjust price when doing a
+  // counter offer, so can account executives and admin" (the latter two
+  // once they're acting through the same UI via the retailer picker
+  // above). Labels include the seller's anon handle only when a
+  // collection spans more than one seller, so a single-seller menu link
+  // stays uncluttered.
+  const bulkAdjustLines = useMemo(
+    () =>
+      sellers.flatMap((seller) =>
+        seller.listings.map((listing) => {
+          const qty = Number(quantities[listing.id] ?? 0) || listing.quantity;
+          return {
+            id: listing.id,
+            label: sellers.length > 1 ? `${listing.strainName} (${seller.anonHandle})` : listing.strainName,
+            price: effectivePrice(listing, qty),
+            quantity: qty,
+            unit: listing.unit,
+          };
+        })
+      ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [sellers, quantities, priceOverrides]
+  );
+
+  function applyBulkPriceAdjust(mode: "percent" | "setPrice", value: number, ids: string[]) {
+    const idSet = new Set(ids);
+    setPriceOverrides((prev) => {
+      const next = { ...prev };
+      for (const line of bulkAdjustLines) {
+        if (!idSet.has(line.id)) continue;
+        const newPrice = mode === "setPrice" ? value : line.price * (1 + value / 100);
+        next[line.id] = String(Math.max(0.01, Math.round(newPrice * 100) / 100));
+      }
+      return next;
+    });
+  }
+
   function adjustQty(listingId: string, delta: number, max: number, step: number) {
     setQuantities((q) => {
       const current = Number(q[listingId] ?? 0);
@@ -152,7 +206,7 @@ export function CartBuilder({
   async function doSubmit(kind: "accept" | "counter", itemsToSend: CartItemInput[], termsToSend: Terms) {
     setResult(null);
     setSubmitting(kind);
-    const r = await submitPublicCartOrder(collectionId, itemsToSend, termsToSend);
+    const r = await submitPublicCartOrder(collectionId, itemsToSend, termsToSend, assistedRetailer?.id);
     setSubmitting(null);
     setResult(r.ok ? { ok: true } : { ok: false, error: r.error });
   }
@@ -170,8 +224,14 @@ export function CartBuilder({
   // triggered moments earlier isn't guaranteed visible yet in this same
   // call.
   function acceptOffer(skipAuthGate?: boolean) {
-    if (!isRetailer && !skipAuthGate) {
-      setPendingAction("accept");
+    if (!canAct && !skipAuthGate) {
+      // The license-first flow is only ever the right next step for an
+      // anonymous visitor or a not-yet-authenticated retailer — an AE/
+      // Admin session that hasn't picked a retailer yet (or hasn't
+      // acknowledged the disclaimer) never gets here in practice, since
+      // the buttons themselves aren't rendered until canAct is true, but
+      // guard it explicitly rather than relying on that alone.
+      if (!isAssistant) setPendingAction("accept");
       return;
     }
     const fullItems: CartItemInput[] = sellers.flatMap((seller) =>
@@ -189,8 +249,8 @@ export function CartBuilder({
   }
 
   function counterOffer(skipAuthGate?: boolean) {
-    if (!isRetailer && !skipAuthGate) {
-      setPendingAction("counter");
+    if (!canAct && !skipAuthGate) {
+      if (!isAssistant) setPendingAction("counter");
       return;
     }
     doSubmit("counter", items, terms);
@@ -230,6 +290,8 @@ export function CartBuilder({
 
   return (
     <div className="space-y-6">
+      <CartBulkPriceAdjust lines={bulkAdjustLines} onApply={applyBulkPriceAdjust} />
+
       {sellers.map((seller) => (
         <div key={seller.anonHandle}>
           <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-2">{seller.anonHandle}</h2>
@@ -413,7 +475,28 @@ export function CartBuilder({
 
             {pendingAction ? (
               <LicenseAuthFlow onAuthenticated={handleAuthenticated} onCancel={() => setPendingAction(null)} />
-            ) : sessionRole && !isRetailer ? (
+            ) : isAssistant && !assistedRetailer ? (
+              // Admin/AE — same "find or create the retailer account
+              // you're submitting on behalf of" picker the single-listing
+              // respond flow already uses (§36/§49-C), reused as-is.
+              <RetailerPicker onResolved={setAssistedRetailer} />
+            ) : isAssistant && sessionRole === "sales_rep" && !disclaimerAcknowledged ? (
+              <div className="space-y-2">
+                <p className="text-xs text-green-700 dark:text-green-400">
+                  Acting on behalf of {assistedRetailer!.businessName}
+                </p>
+                <TermsDisclaimer />
+                <label className="flex items-start gap-2 text-xs text-gray-600 dark:text-gray-300">
+                  <input
+                    type="checkbox"
+                    checked={disclaimerAcknowledged}
+                    onChange={(e) => setDisclaimerAcknowledged(e.target.checked)}
+                    className="w-4 h-4 mt-0.5"
+                  />
+                  I have read and understand the terms disclaimer above.
+                </label>
+              </div>
+            ) : sessionRole && !isRetailer && !isAssistant ? (
               // Logged in as some other role entirely (grower/admin/etc) — the
               // license-first flow below is specifically for a Retailer to
               // sign in or create an account, which doesn't apply here.
@@ -425,37 +508,44 @@ export function CartBuilder({
               // signed in yet — clicking Accept/Counter is what triggers the
               // license-first sign-in flow (acceptOffer/counterOffer above),
               // not a separate "create an account first" landing state.
-              <div className="grid grid-cols-3 gap-2">
-                <button
-                  type="button"
-                  onClick={() => acceptOffer()}
-                  disabled={submitting !== null}
-                  className="bg-green-700 text-white rounded-lg px-3 py-2 text-sm font-medium disabled:opacity-50"
-                  title="Send the seller's full menu back exactly as offered"
-                >
-                  {submitting === "accept" ? "Sending…" : "Accept offer"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => counterOffer()}
-                  disabled={items.length === 0 || submitting !== null || matchesFullOffer}
-                  className="border border-green-700 text-green-700 dark:text-green-400 rounded-lg px-3 py-2 text-sm font-medium disabled:opacity-50"
-                  title={
-                    matchesFullOffer
-                      ? "Adjust a quantity, price tier, or terms above to counter"
-                      : "Send your adjusted quantities/terms as a counter-offer"
-                  }
-                >
-                  {submitting === "counter" ? "Sending…" : "Counter offer"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setDeclined(true)}
-                  disabled={submitting !== null}
-                  className="border border-gray-300 dark:border-gray-700 text-gray-600 dark:text-gray-300 rounded-lg px-3 py-2 text-sm font-medium disabled:opacity-50"
-                >
-                  Reject
-                </button>
+              <div>
+                {isAssistant && assistedRetailer && (
+                  <p className="text-xs text-green-700 dark:text-green-400 mb-2">
+                    Acting on behalf of {assistedRetailer.businessName}
+                  </p>
+                )}
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => acceptOffer()}
+                    disabled={submitting !== null}
+                    className="bg-green-700 text-white rounded-lg px-3 py-2 text-sm font-medium disabled:opacity-50"
+                    title="Send the seller's full menu back exactly as offered"
+                  >
+                    {submitting === "accept" ? "Sending…" : "Accept offer"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => counterOffer()}
+                    disabled={items.length === 0 || submitting !== null || matchesFullOffer}
+                    className="border border-green-700 text-green-700 dark:text-green-400 rounded-lg px-3 py-2 text-sm font-medium disabled:opacity-50"
+                    title={
+                      matchesFullOffer
+                        ? "Adjust a quantity, price tier, or terms above to counter"
+                        : "Send your adjusted quantities/terms as a counter-offer"
+                    }
+                  >
+                    {submitting === "counter" ? "Sending…" : "Counter offer"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDeclined(true)}
+                    disabled={submitting !== null}
+                    className="border border-gray-300 dark:border-gray-700 text-gray-600 dark:text-gray-300 rounded-lg px-3 py-2 text-sm font-medium disabled:opacity-50"
+                  >
+                    Reject
+                  </button>
+                </div>
               </div>
             )}
           </>

@@ -50,7 +50,7 @@ export function MenuSection({
   ) => Promise<{ ok: true; savedCount: number } | { ok: false; error: string }>;
   bulkPriceSaveAction?: (
     batchId: string,
-    adjustment: { mode: "percent" | "dollar" | "targetTotal"; value: number },
+    adjustment: { mode: "percent" | "dollar" | "targetTotal" | "setPrice"; value: number },
     listingIds?: string[]
   ) => Promise<{ ok: true; updatedCount: number } | { ok: false; error: string }>;
 }) {
