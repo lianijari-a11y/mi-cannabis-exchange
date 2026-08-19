@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { requireRole } from "@/lib/dal";
 import { prisma } from "@/lib/prisma";
 import { createListing, updateListing, getListingForEdit, bulkAddMediaToMenu } from "@/lib/listings";
+import { parseMediaUploadsField } from "@/lib/media";
 import { markLeadAssignedRep } from "@/lib/leads";
 import { CATEGORIES, UNITS, TERMS, SALES_REP_ASSISTABLE_ROLES } from "@/lib/constants";
 import type { ListingDraft } from "@/lib/ai-listing";
@@ -123,7 +124,7 @@ export async function handleCreateListingAsAssistant(
     redirect(`${redirectBasePath}/listings/new?error=${encodeURIComponent("Choose valid terms.")}`);
   }
 
-  const files = formData.getAll("media").filter((f): f is File => f instanceof File);
+  const media = parseMediaUploadsField(formData);
 
   await createListing(
     seller.id,
@@ -142,7 +143,7 @@ export async function handleCreateListingAsAssistant(
           ? new Date(Date.now() + expiresInHours * 60 * 60 * 1000)
           : null,
     },
-    files,
+    media,
     session.user.id
   );
 
@@ -174,7 +175,7 @@ export async function handleCreateListingsAsAssistantBulk(
     redirect(`${redirectBasePath}/listings/new?error=${encodeURIComponent(assignment.error)}`);
   }
 
-  let drafts: (ListingDraft & { _key?: string })[];
+  let drafts: (ListingDraft & { media?: { url: string; contentType: string }[] })[];
   try {
     drafts = JSON.parse(String(formData.get("drafts") ?? "[]"));
   } catch {
@@ -210,9 +211,8 @@ export async function handleCreateListingsAsAssistantBulk(
     if (!Number.isFinite(quantity) || quantity <= 0) continue;
     if (!Number.isFinite(pricePerUnit) || pricePerUnit <= 0) continue;
 
-    const rowKey = typeof d?._key === "string" ? d._key : null;
-    const files = rowKey
-      ? formData.getAll(`media_${rowKey}`).filter((f): f is File => f instanceof File)
+    const media = Array.isArray(d?.media)
+      ? d.media.filter((m): m is { url: string; contentType: string } => !!m?.url)
       : [];
 
     await createListing(
@@ -229,7 +229,7 @@ export async function handleCreateListingsAsAssistantBulk(
         notes: typeof d?.notes === "string" && d.notes.trim() ? d.notes.trim() : null,
         expiresAt,
       },
-      files,
+      media,
       session.user.id,
       batchId
     );
@@ -283,7 +283,7 @@ async function applyListingEditAsAssistant(
     return { ok: false, error: "Choose valid terms." };
   }
 
-  const files = formData.getAll("media").filter((f): f is File => f instanceof File);
+  const media = parseMediaUploadsField(formData);
   const removedMediaIds = formData.getAll("removeMedia").map(String);
 
   try {
@@ -302,7 +302,7 @@ async function applyListingEditAsAssistant(
         minimumOrderQuantity: moqRaw ? Number(moqRaw) : null,
         belowMinimumPricePerUnit: belowMinPriceRaw ? Number(belowMinPriceRaw) : null,
       },
-      files,
+      media,
       removedMediaIds,
       { bypassOwnership: actorRole === "admin" }
     );

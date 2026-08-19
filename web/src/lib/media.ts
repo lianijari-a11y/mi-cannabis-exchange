@@ -3,6 +3,26 @@ import { put, del } from "@vercel/blob";
 import path from "path";
 import { attemptRedaction } from "@/lib/media-redaction";
 
+// Every listing-media form now uploads files client-direct-to-Blob before
+// submitting (see components/seller/listing-form.tsx / edit-listing-form.tsx)
+// and carries the result as a single JSON-encoded `mediaUploads` field
+// instead of raw File objects — this is the one place that parses it back
+// out, so the shape can't drift between the create and edit call sites.
+export function parseMediaUploadsField(formData: FormData): { url: string; contentType: string }[] {
+  const raw = formData.get("mediaUploads");
+  if (typeof raw !== "string" || !raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((m): m is { url: unknown; contentType: unknown } => m && typeof m === "object")
+      .map((m) => ({ url: String(m.url ?? ""), contentType: String(m.contentType ?? "") }))
+      .filter((m) => m.url);
+  } catch {
+    return [];
+  }
+}
+
 // Vercel Blob Storage — swapped in from local disk (CLAUDE.md §7/§8's old
 // "dev only, swap before production" note) after uploads started failing
 // outright on the deployed app: Vercel's serverless filesystem is
@@ -20,50 +40,6 @@ async function uploadToBlob(key: string, file: File, buffer: Buffer, defaultExt:
     contentType: file.type || undefined,
   });
   return blob.url;
-}
-
-export async function saveMediaFile(
-  listingId: string,
-  file: File
-): Promise<{
-  url: string;
-  type: "image" | "video";
-  redactionAttempted: boolean;
-  redactionRegionsFound: number;
-  redactionError?: string;
-}> {
-  const isVideo = file.type.startsWith("video/");
-  const isImage = file.type.startsWith("image/");
-  if (!isVideo && !isImage) {
-    throw new Error(`Unsupported media type: ${file.type || "unknown"}`);
-  }
-
-  let buffer: Buffer = Buffer.from(await file.arrayBuffer());
-
-  // Best-effort logo/contact-info redaction — images only, never blocks the
-  // upload on failure. See lib/media-redaction.ts for the honest limits.
-  // Operates on the in-memory buffer now (no local file to read/overwrite
-  // once uploads go straight to Blob storage) and hands back whichever
-  // buffer should actually be uploaded.
-  let redaction: Omit<Awaited<ReturnType<typeof attemptRedaction>>, "buffer"> = {
-    attempted: false,
-    regionsFound: 0,
-  };
-  if (isImage) {
-    const result = await attemptRedaction(buffer, file.type);
-    buffer = result.buffer;
-    redaction = { attempted: result.attempted, regionsFound: result.regionsFound, error: result.error };
-  }
-
-  const url = await uploadToBlob(listingId, file, buffer, isVideo ? ".mp4" : ".jpg");
-
-  return {
-    url,
-    type: isVideo ? "video" : "image",
-    redactionAttempted: redaction.attempted,
-    redactionRegionsFound: redaction.regionsFound,
-    redactionError: redaction.error,
-  };
 }
 
 // Invoices and proof-of-delivery photos — image or PDF, unlike listing media

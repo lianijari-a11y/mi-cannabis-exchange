@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { requireRole } from "@/lib/dal";
 import { prisma } from "@/lib/prisma";
 import { createListing, confirmListingFresh, updateListing, bulkAddMediaToMenu } from "@/lib/listings";
+import { parseMediaUploadsField } from "@/lib/media";
 import { addOfferRound, type RoundAction } from "@/lib/offers";
 import { uploadInvoice, acceptShipmentSchedule, setPickupInstructions } from "@/lib/shipments";
 import { respondToSplitContract } from "@/lib/split-contracts";
@@ -52,7 +53,7 @@ export async function handleCreateListing(role: SellerRole, formData: FormData) 
     redirect(`/${role}/listings/new?error=${encodeURIComponent("Choose valid terms.")}`);
   }
 
-  const files = formData.getAll("media").filter((f): f is File => f instanceof File);
+  const media = parseMediaUploadsField(formData);
 
   await createListing(
     session.user.id,
@@ -71,7 +72,7 @@ export async function handleCreateListing(role: SellerRole, formData: FormData) 
           ? new Date(Date.now() + expiresInHours * 60 * 60 * 1000)
           : null,
     },
-    files
+    media
   );
 
   redirect(`/${role}`);
@@ -111,7 +112,7 @@ export async function handleEditListing(role: SellerRole, formData: FormData) {
     redirect(`/${role}/listings/${listingId}?error=${encodeURIComponent("Choose valid terms.")}`);
   }
 
-  const files = formData.getAll("media").filter((f): f is File => f instanceof File);
+  const media = parseMediaUploadsField(formData);
   const removedMediaIds = formData.getAll("removeMedia").map(String);
 
   try {
@@ -130,7 +131,7 @@ export async function handleEditListing(role: SellerRole, formData: FormData) {
         minimumOrderQuantity: moqRaw ? Number(moqRaw) : null,
         belowMinimumPricePerUnit: belowMinPriceRaw ? Number(belowMinPriceRaw) : null,
       },
-      files,
+      media,
       removedMediaIds
     );
   } catch (err) {

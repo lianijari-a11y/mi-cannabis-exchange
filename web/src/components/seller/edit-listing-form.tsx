@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { upload } from "@vercel/blob/client";
 import { CATEGORIES, CATEGORY_LABELS, TERMS, TERMS_LABELS, UNITS } from "@/lib/constants";
 
 const inputClass =
@@ -40,6 +41,41 @@ export function EditListingForm({
   error?: string;
 }) {
   const [removedIds, setRemovedIds] = useState<Set<string>>(new Set());
+  const [newFiles, setNewFiles] = useState<File[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<{ done: number; total: number } | null>(null);
+  const formRef = useRef<HTMLFormElement>(null);
+
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!formRef.current) return;
+
+    const formData = new FormData(formRef.current);
+
+    if (newFiles.length > 0) {
+      setUploading(true);
+      setUploadProgress({ done: 0, total: newFiles.length });
+      const media: { url: string; contentType: string }[] = [];
+      for (const file of newFiles) {
+        try {
+          const blob = await upload(`listing-${listing.id}/${Date.now()}-${file.name}`, file, {
+            access: "public",
+            handleUploadUrl: "/api/blob-upload",
+          });
+          media.push({ url: blob.url, contentType: blob.contentType ?? file.type });
+        } catch {
+          // One file failing to upload shouldn't block saving the rest of
+          // the edit — it just saves with fewer new photos than selected.
+        }
+        setUploadProgress((p) => (p ? { done: p.done + 1, total: p.total } : null));
+      }
+      formData.set("mediaUploads", JSON.stringify(media));
+      setUploading(false);
+      setUploadProgress(null);
+    }
+
+    action(formData);
+  }
 
   function toggleRemove(id: string) {
     setRemovedIds((prev) => {
@@ -51,7 +87,7 @@ export function EditListingForm({
   }
 
   return (
-    <form action={action} className="space-y-4">
+    <form ref={formRef} onSubmit={handleSubmit} className="space-y-4">
       <input type="hidden" name="listingId" value={listing.id} />
 
       <div>
@@ -249,10 +285,10 @@ export function EditListingForm({
         </label>
         <input
           id="edit-media"
-          name="media"
           type="file"
           accept="image/*,video/*"
           multiple
+          onChange={(e) => setNewFiles(Array.from(e.target.files ?? []))}
           className={`${inputClass} file:mr-3 file:rounded-md file:border-0 file:bg-green-700 file:text-white file:px-3 file:py-1.5 file:text-xs`}
         />
       </div>
@@ -260,8 +296,16 @@ export function EditListingForm({
       {error && <p className="text-xs text-red-600">{error}</p>}
 
       <div className="flex gap-2">
-        <button type="submit" className="bg-green-700 text-white rounded-lg px-4 py-2 text-sm font-medium">
-          Save changes
+        <button
+          type="submit"
+          disabled={uploading}
+          className="bg-green-700 text-white rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-50"
+        >
+          {uploading
+            ? uploadProgress
+              ? `Uploading ${uploadProgress.done}/${uploadProgress.total}…`
+              : "Saving…"
+            : "Save changes"}
         </button>
         {onCancel && (
           <button

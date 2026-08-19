@@ -1,7 +1,7 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
 import { generateAnonHandle } from "@/lib/anon-handle";
-import { saveMediaFile, finalizeUploadedMedia } from "@/lib/media";
+import { finalizeUploadedMedia } from "@/lib/media";
 import type { Category, Terms, Unit } from "@/lib/constants";
 import { SELLER_ROLES } from "@/lib/constants";
 
@@ -33,7 +33,7 @@ export async function createListing(
   postedById: string,
   postedByRole: string,
   input: NewListingInput,
-  files: File[],
+  media: { url: string; contentType: string }[],
   createdBySalesRepId?: string,
   batchId?: string
 ) {
@@ -64,9 +64,9 @@ export async function createListing(
     },
   });
 
-  for (const [i, file] of files.entries()) {
-    if (!file || file.size === 0) continue;
-    const saved = await saveMediaFile(listing.id, file);
+  for (const [i, { url, contentType }] of media.entries()) {
+    if (!url) continue;
+    const saved = await finalizeUploadedMedia(url, contentType);
     await prisma.listingMedia.create({
       data: {
         listingId: listing.id,
@@ -109,7 +109,7 @@ export async function updateListing(
   listingId: string,
   callerId: string,
   input: ListingEditInput,
-  newFiles: File[],
+  newMedia: { url: string; contentType: string }[],
   removedMediaIds: string[],
   opts?: { bypassOwnership?: boolean }
 ) {
@@ -137,9 +137,9 @@ export async function updateListing(
   }
 
   const remainingCount = await prisma.listingMedia.count({ where: { listingId } });
-  for (const [i, file] of newFiles.entries()) {
-    if (!file || file.size === 0) continue;
-    const saved = await saveMediaFile(listingId, file);
+  for (const [i, { url, contentType }] of newMedia.entries()) {
+    if (!url) continue;
+    const saved = await finalizeUploadedMedia(url, contentType);
     await prisma.listingMedia.create({
       data: {
         listingId,

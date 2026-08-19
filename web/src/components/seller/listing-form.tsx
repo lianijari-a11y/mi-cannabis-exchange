@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
+import { upload } from "@vercel/blob/client";
 import { Sparkles, X } from "lucide-react";
 import {
   CATEGORIES,
@@ -79,6 +80,20 @@ export function ListingForm({
   const [bulkMode, setBulkMode] = useState(false);
   const [bulkDrafts, setBulkDrafts] = useState<BulkRow[] | null>(null);
 
+  // Selected-but-not-yet-uploaded files, tracked in state rather than left
+  // to the file inputs' own native form serialization — those inputs
+  // deliberately have no `name` attribute, so a plain form submit would
+  // never see them at all. Uploading happens on submit, straight from the
+  // browser to Vercel Blob storage (see the submit handler below), which
+  // is what lets a real video clear the platform's request-body ceiling —
+  // passing File objects through a Server Action tops out around 4MB on
+  // Vercel regardless of any app-level config.
+  const [singleFiles, setSingleFiles] = useState<File[]>([]);
+  const [bulkFiles, setBulkFiles] = useState<Record<string, File[]>>({});
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<{ done: number; total: number } | null>(null);
+  const formRef = useRef<HTMLFormElement>(null);
+
   function set<K extends keyof ListingDraft>(key: K, value: ListingDraft[K]) {
     setDraft((d) => ({ ...d, [key]: value }));
   }
@@ -139,6 +154,62 @@ export function ListingForm({
       (d) => d.strainName.trim() && (d.quantity ?? 0) > 0 && (d.pricePerUnit ?? 0) > 0
     );
 
+  async function uploadAll(files: File[], pathPrefix: string, onOneDone: () => void) {
+    const results: { url: string; contentType: string }[] = [];
+    for (const file of files) {
+      try {
+        const blob = await upload(`${pathPrefix}/${Date.now()}-${file.name}`, file, {
+          access: "public",
+          handleUploadUrl: "/api/blob-upload",
+        });
+        results.push({ url: blob.url, contentType: blob.contentType ?? file.type });
+      } catch {
+        // One file failing to upload shouldn't block the rest of the
+        // listing from posting — it just posts with fewer photos than
+        // selected.
+      }
+      onOneDone();
+    }
+    return results;
+  }
+
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!formRef.current) return;
+
+    const isBulk = bulkMode && bulkAction;
+    const totalFiles = isBulk
+      ? Object.values(bulkFiles).reduce((n, arr) => n + arr.length, 0)
+      : singleFiles.length;
+
+    if (totalFiles > 0) {
+      setUploading(true);
+      setUploadProgress({ done: 0, total: totalFiles });
+    }
+    const bumpProgress = () => setUploadProgress((p) => (p ? { done: p.done + 1, total: p.total } : null));
+
+    const formData = new FormData(formRef.current);
+
+    if (isBulk) {
+      const enriched = await Promise.all(
+        (bulkDrafts ?? []).map(async (d) => {
+          const files = bulkFiles[d._key] ?? [];
+          const media = files.length > 0 ? await uploadAll(files, "listing-media", bumpProgress) : [];
+          const { _key, ...rest } = d;
+          return { ...rest, media };
+        })
+      );
+      formData.set("drafts", JSON.stringify(enriched));
+    } else if (singleFiles.length > 0) {
+      const media = await uploadAll(singleFiles, "listing-media", bumpProgress);
+      formData.set("mediaUploads", JSON.stringify(media));
+    }
+
+    setUploading(false);
+    setUploadProgress(null);
+    (isBulk ? bulkAction! : action)(formData);
+  }
+
   return (
     <div className="space-y-5 max-w-lg">
       <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-900 rounded-xl p-3">
@@ -191,7 +262,7 @@ export function ListingForm({
         {aiError && <p className="mt-2 text-xs text-amber-700 dark:text-amber-400">{aiError}</p>}
       </div>
 
-      <form action={bulkMode && bulkAction ? bulkAction : action} className="space-y-4">
+      <form ref={formRef} onSubmit={handleSubmit} className="space-y-4">
         {sellerPickerSlot}
 
         {bulkMode ? (
@@ -287,9 +358,11 @@ export function ListingForm({
                           <td className="px-2 py-1">
                             <input
                               type="file"
-                              name={`media_${d._key}`}
                               accept="image/*,video/*"
                               multiple
+                              onChange={(e) =>
+                                setBulkFiles((f) => ({ ...f, [d._key]: Array.from(e.target.files ?? []) }))
+                              }
                               className="w-24 text-[10px] file:mr-1 file:rounded file:border-0 file:bg-green-700 file:text-white file:px-1.5 file:py-0.5 file:text-[10px]"
                             />
                           </td>
@@ -488,10 +561,10 @@ export function ListingForm({
             </label>
             <input
               id="media"
-              name="media"
               type="file"
               accept="image/*,video/*"
               multiple
+              onChange={(e) => setSingleFiles(Array.from(e.target.files ?? []))}
               className={`${inputClass} file:mr-3 file:rounded-md file:border-0 file:bg-green-700 file:text-white file:px-3 file:py-1.5 file:text-xs`}
             />
           </div>
@@ -501,10 +574,16 @@ export function ListingForm({
 
         <button
           type="submit"
-          disabled={bulkMode && !bulkValid}
+          disabled={uploading || (bulkMode && !bulkValid)}
           className="bg-green-700 text-white rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-50"
         >
-          {bulkMode ? `Post ${bulkDrafts?.length ?? 0} listing${bulkDrafts?.length === 1 ? "" : "s"}` : "Post listing"}
+          {uploading
+            ? uploadProgress
+              ? `Uploading ${uploadProgress.done}/${uploadProgress.total}…`
+              : "Posting…"
+            : bulkMode
+              ? `Post ${bulkDrafts?.length ?? 0} listing${bulkDrafts?.length === 1 ? "" : "s"}`
+              : "Post listing"}
         </button>
       </form>
     </div>
