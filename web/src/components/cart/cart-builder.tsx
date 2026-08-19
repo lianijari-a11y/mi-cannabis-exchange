@@ -417,24 +417,29 @@ export function CartBuilder({
 
       {lightbox && (
         <div
-          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4"
+          className="fixed inset-0 z-50 bg-black/95 flex items-center justify-center p-1 sm:p-6"
           onClick={() => setLightbox(null)}
         >
           <button
             type="button"
             onClick={() => setLightbox(null)}
-            className="absolute top-4 right-4 text-white/80 hover:text-white"
+            className="absolute top-2 right-2 sm:top-4 sm:right-4 text-white/90 hover:text-white bg-black/40 rounded-full p-1.5 z-10"
             aria-label="Close"
           >
             <X className="w-7 h-7" />
           </button>
+          {/* w-full h-full (not just max-w/max-h) so a small source photo
+              still gets scaled UP to fill the screen — "big enough to see
+              very good from a phone" — rather than only ever being capped
+              down from a large one. object-contain keeps it uncropped. */}
           {lightbox.type === "video" ? (
             <video
               src={lightbox.url}
               controls
               autoPlay
+              playsInline
               onClick={(e) => e.stopPropagation()}
-              className="max-w-full max-h-full rounded-lg"
+              className="w-full h-full object-contain"
             />
           ) : (
             // eslint-disable-next-line @next/next/no-img-element
@@ -442,7 +447,7 @@ export function CartBuilder({
               src={lightbox.url}
               alt={lightbox.alt}
               onClick={(e) => e.stopPropagation()}
-              className="max-w-full max-h-full rounded-lg object-contain"
+              className="w-full h-full object-contain"
             />
           )}
         </div>
