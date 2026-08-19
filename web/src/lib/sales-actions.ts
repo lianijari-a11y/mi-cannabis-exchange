@@ -2,7 +2,7 @@ import "server-only";
 import { redirect } from "next/navigation";
 import { requireRole } from "@/lib/dal";
 import { prisma } from "@/lib/prisma";
-import { createListing, updateListing, getListingForEdit } from "@/lib/listings";
+import { createListing, updateListing, getListingForEdit, bulkAddMediaToMenu } from "@/lib/listings";
 import { markLeadAssignedRep } from "@/lib/leads";
 import { CATEGORIES, UNITS, TERMS, SALES_REP_ASSISTABLE_ROLES } from "@/lib/constants";
 import type { ListingDraft } from "@/lib/ai-listing";
@@ -349,6 +349,20 @@ export async function handleEditListingFromAccount(
   redirect(`${accountsBasePath}/${sellerId}`);
 }
 
+// AE/Admin's side of bulk photo upload for an already-posted menu — same
+// "computed result, not a redirect" shape as resetSellerPasswordAction,
+// since the caller is a client component driving its own upload UI.
+// bypassOwnership only for Admin, matching every other AE/Admin dual-role
+// function in this file.
+export async function bulkAddPhotosAsAssistant(
+  actorRole: "sales_rep" | "admin",
+  batchId: string,
+  assignments: { listingId: string; file: File }[]
+) {
+  const session = await requireRole(actorRole);
+  return bulkAddMediaToMenu(batchId, session.user.id, assignments, { bypassOwnership: actorRole === "admin" });
+}
+
 // AE/Admin's own read of a listing to edit — same authorization as
 // handleEditListingAsAssistant above.
 export async function getListingForAssistantEdit(
@@ -405,10 +419,15 @@ export async function accountsForSalesRep(salesRepId: string) {
 // for the one-time attempt to infer real groups for existing data instead
 // of leaving them all as singletons.
 type ListingWithMedia = Awaited<ReturnType<typeof prisma.listing.findMany<{ include: { media: true } }>>>[number];
-export type MenuGroup = { batchId: string; createdAt: Date; listings: ListingWithMedia[] };
+export type MenuGroup<T = ListingWithMedia> = { batchId: string; createdAt: Date; listings: T[] };
 
-export function groupListingsIntoMenus(listings: ListingWithMedia[]): MenuGroup[] {
-  const groups = new Map<string, MenuGroup>();
+// Generic over the listing shape so callers with a richer query (e.g. the
+// seller's own dashboard, which also includes `threads`) don't lose those
+// extra fields through this function's return type.
+export function groupListingsIntoMenus<T extends { id: string; batchId: string | null; createdAt: Date }>(
+  listings: T[]
+): MenuGroup<T>[] {
+  const groups = new Map<string, MenuGroup<T>>();
   for (const listing of listings) {
     const key = listing.batchId ?? listing.id;
     const existing = groups.get(key);

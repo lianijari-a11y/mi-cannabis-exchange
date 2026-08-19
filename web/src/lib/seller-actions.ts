@@ -2,7 +2,7 @@ import "server-only";
 import { redirect } from "next/navigation";
 import { requireRole } from "@/lib/dal";
 import { prisma } from "@/lib/prisma";
-import { createListing, confirmListingFresh, updateListing } from "@/lib/listings";
+import { createListing, confirmListingFresh, updateListing, bulkAddMediaToMenu } from "@/lib/listings";
 import { addOfferRound, type RoundAction } from "@/lib/offers";
 import { uploadInvoice, acceptShipmentSchedule, setPickupInstructions } from "@/lib/shipments";
 import { respondToSplitContract } from "@/lib/split-contracts";
@@ -244,4 +244,17 @@ export async function handleRequireReturnInsteadOfCounter(role: SellerRole, form
   const listingId = String(formData.get("listingId") ?? "");
   await requireReturnInsteadOfCounter(dealId, session.user.id);
   redirect(`/${role}/listings/${listingId}`);
+}
+
+// The seller's own side of "a new way to upload pictures for menus that
+// are already done" — see lib/listings.ts's bulkAddMediaToMenu. Returns a
+// result object rather than redirecting, since the caller is a client
+// component driving its own upload UI, not a plain form submit.
+export async function handleBulkAddPhotos(
+  role: SellerRole,
+  batchId: string,
+  assignments: { listingId: string; file: File }[]
+) {
+  const session = await requireRole(role);
+  return bulkAddMediaToMenu(batchId, session.user.id, assignments);
 }

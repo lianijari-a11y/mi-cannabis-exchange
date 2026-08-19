@@ -6,7 +6,7 @@ import { accountDetailForSalesRep } from "@/lib/sales-actions";
 import { MenuSection } from "@/components/sales/menu-section";
 import { InlineResetPassword } from "@/components/sales/inline-reset-password";
 import { ROLE_LABELS, type Role } from "@/lib/constants";
-import { editListingForAccount } from "./actions";
+import { editListingForAccount, bulkAddPhotosForAccount } from "./actions";
 
 const NAV = [
   { href: "/sales", label: "My accounts" },
@@ -96,6 +96,7 @@ export default async function AccountDetailPage({
               })}
               listings={menu.listings}
               editAction={editListingForAccount.bind(null, seller.id)}
+              bulkPhotoSaveAction={bulkAddPhotosForAccount}
             />
           ))}
         </div>

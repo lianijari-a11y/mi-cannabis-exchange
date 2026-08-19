@@ -1,6 +1,7 @@
 import { requireRole } from "@/lib/dal";
 import { PortalShell } from "@/components/portal-shell";
 import { SellerDashboard } from "@/components/seller/seller-dashboard";
+import { bulkAddPhotosAction } from "./actions";
 
 const NAV = [
   { href: "/processor", label: "My listings" },
@@ -16,7 +17,7 @@ export default async function ProcessorPage() {
 
   return (
     <PortalShell roleLabel="Processor" navItems={NAV}>
-      <SellerDashboard sellerId={session.user.id} basePath="/processor" />
+      <SellerDashboard sellerId={session.user.id} basePath="/processor" bulkPhotoSaveAction={bulkAddPhotosAction} />
     </PortalShell>
   );
 }

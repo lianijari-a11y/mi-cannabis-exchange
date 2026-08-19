@@ -5,7 +5,7 @@ import { PortalShell } from "@/components/portal-shell";
 import { accountDetailForAdmin } from "@/lib/admin";
 import { MenuSection } from "@/components/sales/menu-section";
 import { ROLE_LABELS, type Role } from "@/lib/constants";
-import { editListingForAccount } from "./actions";
+import { editListingForAccount, bulkAddPhotosForAccount } from "./actions";
 
 const NAV = [
   { href: "/admin", label: "Overview" },
@@ -94,6 +94,7 @@ export default async function AdminAccountDetailPage({
               })}
               listings={menu.listings}
               editAction={editListingForAccount.bind(null, seller.id)}
+              bulkPhotoSaveAction={bulkAddPhotosForAccount}
             />
           ))}
         </div>

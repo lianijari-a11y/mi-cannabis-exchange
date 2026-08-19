@@ -215,3 +215,63 @@ export async function structureListingDraftsBulk(rawText: string): Promise<Struc
     return { ok: false, error: "Something went wrong reaching the assistant. Try again shortly." };
   }
 }
+
+// Bulk photo matching for an already-posted menu — "if the picture is
+// labeled with the product name, AI can match" (raised, then deferred
+// during the cart-orders build; picked up now). Text-only: matches by
+// FILENAME against the menu's own strain names, not by looking at image
+// content — a filename like "blue-dream-2.jpg" is the actual signal a
+// seller's own camera-roll naming gives us, and a text call is far cheaper
+// than a vision call for every photo. The seller/AE always reviews and can
+// reassign every match before anything uploads — same "drafts, never
+// auto-acts" posture as structureListingDraft(sBulk).
+export type PhotoMatch = { filename: string; matchedStrainName: string | null };
+export type MatchPhotosResult = { ok: true; matches: PhotoMatch[] } | { ok: false; error: string };
+
+export async function matchPhotosToMenu(filenames: string[], strainNames: string[]): Promise<MatchPhotosResult> {
+  await requireAuth();
+  if (filenames.length === 0) return { ok: false, error: "No photos to match." };
+
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    return {
+      ok: false,
+      error: "AI matching isn't configured yet — assign each photo by hand below.",
+    };
+  }
+
+  try {
+    const client = new Anthropic({ apiKey });
+    const response = await client.messages.create({
+      model: MODEL,
+      max_tokens: 1024,
+      output_config: { effort: "low" },
+      system: `You match photo filenames to product names from a cannabis wholesale menu, using the filename text only (you cannot see the images). For each filename, pick the single best-matching product name from the given list, or null if nothing plausibly matches. Output ONLY a JSON array, no prose, one object per filename, in the same order given: [{"filename": "...", "matchedStrainName": "..." | null}]`,
+      messages: [
+        {
+          role: "user",
+          content: `Product names in this menu:\n${strainNames.map((s) => `- ${s}`).join("\n")}\n\nFilenames to match:\n${filenames.map((f) => `- ${f}`).join("\n")}`,
+        },
+      ],
+    });
+
+    const textBlock = response.content.find((b) => b.type === "text");
+    if (textBlock?.type !== "text") {
+      return { ok: false, error: "Couldn't parse a response — assign each photo by hand below." };
+    }
+    const parsedArray = extractJsonArray(textBlock.text);
+    if (!parsedArray) {
+      return { ok: false, error: "Couldn't match those photos — assign each photo by hand below." };
+    }
+
+    const strainSet = new Set(strainNames);
+    const matches: PhotoMatch[] = filenames.map((filename, i) => {
+      const raw = parsedArray[i] as { matchedStrainName?: unknown } | undefined;
+      const candidate = typeof raw?.matchedStrainName === "string" ? raw.matchedStrainName : null;
+      return { filename, matchedStrainName: candidate && strainSet.has(candidate) ? candidate : null };
+    });
+    return { ok: true, matches };
+  } catch {
+    return { ok: false, error: "Something went wrong reaching the assistant — assign each photo by hand below." };
+  }
+}

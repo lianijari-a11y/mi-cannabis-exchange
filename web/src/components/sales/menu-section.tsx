@@ -4,6 +4,8 @@ import { useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { AccountMenuItem } from "@/components/sales/account-menu-item";
 import { ShareMenuLink } from "@/components/sales/share-menu-link";
+import { BulkPhotoUpload } from "@/components/seller/bulk-photo-upload";
+import { matchPhotosToMenu } from "@/lib/ai-listing";
 
 type Media = { id: string; url: string; type: string };
 type Listing = {
@@ -31,14 +33,23 @@ export function MenuSection({
   uploadedLabel,
   listings,
   editAction,
+  bulkPhotoSaveAction,
 }: {
   batchId: string;
   uploadedLabel: string;
   listings: Listing[];
   editAction: (formData: FormData) => void;
+  // Optional — only the AE/Admin account pages pass this (CLAUDE.md's bulk
+  // photo upload feature); the seller's own dashboard renders its own,
+  // differently-scoped copy of BulkPhotoUpload directly.
+  bulkPhotoSaveAction?: (
+    batchId: string,
+    assignments: { listingId: string; file: File }[]
+  ) => Promise<{ ok: true; savedCount: number } | { ok: false; error: string }>;
 }) {
   const [open, setOpen] = useState(false);
   const active = listings.filter((l) => l.status === "active").length;
+  const activeListings = listings.filter((l) => l.status === "active");
   // Same gate the public page itself enforces (lib/listings.ts's
   // publicMenuView) — only offer the link when at least one product would
   // actually show up on it. A menu with everything closed or every row
@@ -72,6 +83,14 @@ export function MenuSection({
       </button>
       {open && (
         <div className="mt-3 space-y-3 pl-2">
+          {bulkPhotoSaveAction && activeListings.length > 0 && (
+            <BulkPhotoUpload
+              batchId={batchId}
+              listings={activeListings}
+              matchAction={matchPhotosToMenu}
+              saveAction={bulkPhotoSaveAction}
+            />
+          )}
           {listings.map((listing) => (
             <AccountMenuItem key={listing.id} listing={listing} editAction={editAction} />
           ))}

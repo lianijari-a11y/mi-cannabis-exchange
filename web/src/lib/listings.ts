@@ -174,6 +174,66 @@ export async function updateListing(
   });
 }
 
+// Bulk photo upload for an already-posted menu — "what if I made a menu
+// without pictures, I'd need a new way to upload pictures for menus that
+// are already done" (raised, then built). One call per menu: each file is
+// pre-assigned to a specific listingId (the UI resolves that, optionally
+// via lib/ai-listing.ts's matchPhotosToMenu for a first-pass suggestion the
+// seller/AE can still override) — this function just does the actual save,
+// reusing the exact per-listing authorization rule updateListing already
+// enforces. A file that fails its own listing's check is silently skipped
+// rather than failing the whole batch, same "partial-but-explained beats
+// all-or-nothing" posture as the bulk listing importer (CLAUDE.md §34).
+export async function bulkAddMediaToMenu(
+  batchId: string,
+  callerId: string,
+  assignments: { listingId: string; file: File }[],
+  opts?: { bypassOwnership?: boolean }
+): Promise<{ ok: true; savedCount: number } | { ok: false; error: string }> {
+  if (assignments.length === 0) return { ok: false, error: "No photos to save." };
+
+  const listingIds = [...new Set(assignments.map((a) => a.listingId))];
+  const listings = await prisma.listing.findMany({
+    where: { id: { in: listingIds }, batchId },
+    include: { postedBy: { select: { assignedSalesRepId: true } } },
+  });
+  const listingById = new Map(listings.map((l) => [l.id, l]));
+
+  let savedCount = 0;
+  for (const { listingId, file } of assignments) {
+    if (!file || file.size === 0) continue;
+    const listing = listingById.get(listingId);
+    if (!listing || listing.status !== "active") continue;
+    const authorized =
+      opts?.bypassOwnership ||
+      listing.postedById === callerId ||
+      listing.createdBySalesRepId === callerId ||
+      listing.postedBy.assignedSalesRepId === callerId;
+    if (!authorized) continue;
+
+    const remainingCount = await prisma.listingMedia.count({ where: { listingId } });
+    const saved = await saveMediaFile(listingId, file);
+    await prisma.listingMedia.create({
+      data: {
+        listingId,
+        url: saved.url,
+        type: saved.type,
+        sortOrder: remainingCount,
+        redactionAttempted: saved.redactionAttempted,
+        redactionRegionsFound: saved.redactionRegionsFound,
+        redactionError: saved.redactionError ?? null,
+      },
+    });
+    await prisma.listing.update({ where: { id: listingId }, data: { lastConfirmedAt: new Date() } });
+    savedCount++;
+  }
+
+  if (savedCount === 0) {
+    return { ok: false, error: "None of those photos could be saved — check you're authorized for this menu." };
+  }
+  return { ok: true, savedCount };
+}
+
 // Broader read for the Sales Rep/Admin edit page — same authorization rule
 // as updateListing above (postedById OR createdBySalesRepId, or bypass for
 // Admin). getListingForSeller below stays strict to postedById only, since
