@@ -2,7 +2,14 @@ import "server-only";
 import { redirect } from "next/navigation";
 import { requireRole } from "@/lib/dal";
 import { prisma } from "@/lib/prisma";
-import { createListing, confirmListingFresh, updateListing, bulkAddMediaToMenu } from "@/lib/listings";
+import {
+  createListing,
+  confirmListingFresh,
+  updateListing,
+  bulkAddMediaToMenu,
+  bulkUpdatePricing,
+  type PriceAdjustment,
+} from "@/lib/listings";
 import { parseMediaUploadsField } from "@/lib/media";
 import { addOfferRound, type RoundAction } from "@/lib/offers";
 import { uploadInvoice, acceptShipmentSchedule, setPickupInstructions } from "@/lib/shipments";
@@ -258,4 +265,12 @@ export async function handleBulkAddPhotos(
 ) {
   const session = await requireRole(role);
   return bulkAddMediaToMenu(batchId, session.user.id, assignments);
+}
+
+// The seller's own side of bulk price changes — "by percentage, or
+// dollar amount," plus a target-total mode. See lib/listings.ts's
+// bulkUpdatePricing.
+export async function handleBulkUpdatePricing(role: SellerRole, batchId: string, adjustment: PriceAdjustment) {
+  const session = await requireRole(role);
+  return bulkUpdatePricing(batchId, session.user.id, adjustment);
 }

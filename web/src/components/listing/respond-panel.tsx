@@ -26,10 +26,13 @@ const ACTION_LABEL: Record<Action, string> = {
 
 // Drives the gated part of a shared listing link (CLAUDE.md §36): whoever
 // clicked Accept/Counter/Decline lands here, and depending on who's signed
-// in (nobody yet, an existing Retailer, or Admin acting on a retailer's
-// behalf) shows the matching path before the action actually writes
-// anything — the write itself is always the same call to
-// respondToListingAsRetailer regardless of which path got there.
+// in (nobody yet, an existing Retailer, or Admin/Account Executive acting
+// on a retailer's behalf) shows the matching path before the action
+// actually writes anything — the write itself is always the same call to
+// respondToListingAsRetailer regardless of which path got there. AE access
+// to the assisted-retailer picker was added later, on direct request — see
+// lib/admin-retailer-assist.ts's and lib/public-respond-actions.ts's own
+// comments for the reversal this represents.
 export function RespondPanel({
   listingId,
   action,
@@ -51,7 +54,7 @@ export function RespondPanel({
     return <ActionForm listingId={listingId} retailerId={sessionUserId} action={action} defaultPrice={defaultPrice} defaultTerms={defaultTerms} />;
   }
 
-  if (sessionRole === "admin") {
+  if (sessionRole === "admin" || sessionRole === "sales_rep") {
     if (adminRetailerId) {
       return (
         <div className="space-y-3">

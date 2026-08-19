@@ -5,6 +5,7 @@ import { ChevronDown, ChevronRight } from "lucide-react";
 import { AccountMenuItem } from "@/components/sales/account-menu-item";
 import { ShareMenuLink } from "@/components/sales/share-menu-link";
 import { BulkPhotoUpload } from "@/components/seller/bulk-photo-upload";
+import { BulkPriceUpdate } from "@/components/seller/bulk-price-update";
 import { matchPhotosToMenu } from "@/lib/ai-listing";
 
 type Media = { id: string; url: string; type: string };
@@ -34,6 +35,7 @@ export function MenuSection({
   listings,
   editAction,
   bulkPhotoSaveAction,
+  bulkPriceSaveAction,
 }: {
   batchId: string;
   uploadedLabel: string;
@@ -46,6 +48,10 @@ export function MenuSection({
     batchId: string,
     assignments: { listingId: string; url: string; contentType: string }[]
   ) => Promise<{ ok: true; savedCount: number } | { ok: false; error: string }>;
+  bulkPriceSaveAction?: (
+    batchId: string,
+    adjustment: { mode: "percent" | "dollar" | "targetTotal"; value: number }
+  ) => Promise<{ ok: true; updatedCount: number } | { ok: false; error: string }>;
 }) {
   const [open, setOpen] = useState(false);
   const active = listings.filter((l) => l.status === "active").length;
@@ -104,6 +110,9 @@ export function MenuSection({
               matchAction={matchPhotosToMenu}
               saveAction={bulkPhotoSaveAction}
             />
+          )}
+          {bulkPriceSaveAction && activeListings.length > 0 && (
+            <BulkPriceUpdate batchId={batchId} listings={activeListings} saveAction={bulkPriceSaveAction} />
           )}
           {listings.map((listing) => (
             <AccountMenuItem key={listing.id} listing={listing} editAction={editAction} />

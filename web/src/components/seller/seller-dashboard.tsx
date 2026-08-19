@@ -10,6 +10,7 @@ export async function SellerDashboard({
   sellerId,
   basePath,
   bulkPhotoSaveAction,
+  bulkPriceSaveAction,
 }: {
   sellerId: string;
   basePath: string;
@@ -17,6 +18,10 @@ export async function SellerDashboard({
     batchId: string,
     assignments: { listingId: string; url: string; contentType: string }[]
   ) => Promise<{ ok: true; savedCount: number } | { ok: false; error: string }>;
+  bulkPriceSaveAction?: (
+    batchId: string,
+    adjustment: { mode: "percent" | "dollar" | "targetTotal"; value: number }
+  ) => Promise<{ ok: true; updatedCount: number } | { ok: false; error: string }>;
 }) {
   const listings = await listingsForSeller(sellerId);
   // Grouped into menus (CLAUDE.md §40's grouping, now here too) so a "Bulk
@@ -106,7 +111,7 @@ export async function SellerDashboard({
             </div>
           );
 
-          if (!bulkPhotoSaveAction) return <div key={menu.batchId}>{cardGrid}</div>;
+          if (!bulkPhotoSaveAction || !bulkPriceSaveAction) return <div key={menu.batchId}>{cardGrid}</div>;
 
           return (
             <DashboardMenuGroup
@@ -119,8 +124,15 @@ export async function SellerDashboard({
               })}
               productCount={menu.listings.length}
               activeCount={activeCount}
-              activeListings={activeListings.map((l) => ({ id: l.id, strainName: l.strainName }))}
+              activeListings={activeListings.map((l) => ({
+                id: l.id,
+                strainName: l.strainName,
+                pricePerUnit: l.pricePerUnit,
+                quantity: l.quantity,
+                unit: l.unit,
+              }))}
               saveAction={bulkPhotoSaveAction}
+              priceSaveAction={bulkPriceSaveAction}
               defaultOpen
             >
               {cardGrid}

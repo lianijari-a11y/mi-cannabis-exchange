@@ -5,6 +5,7 @@ import { Leaf, Minus, Plus, X } from "lucide-react";
 import Link from "next/link";
 import { CATEGORY_LABELS, TERMS, TERMS_LABELS, type Category, type Terms } from "@/lib/constants";
 import { submitPublicCartOrder } from "@/lib/public-cart-actions";
+import { LicenseAuthFlow } from "@/components/cart/license-auth-flow";
 import type { CartItemInput } from "@/lib/cart-orders";
 
 type Media = { id: string; url: string; type: string };
@@ -46,12 +47,10 @@ export function CartBuilder({
   sellers,
   collectionId,
   sessionRole,
-  callbackUrl,
 }: {
   sellers: CartSeller[];
   collectionId?: string;
   sessionRole: string | null;
-  callbackUrl: string;
 }) {
   const [quantities, setQuantities] = useState<Record<string, string>>(() => fullOfferQuantities(sellers));
   // Per-product price overrides for a counter-offer — "in a counter offer
@@ -73,6 +72,13 @@ export function CartBuilder({
   const [declined, setDeclined] = useState(false);
   const [submitting, setSubmitting] = useState<"accept" | "counter" | null>(null);
   const [lightbox, setLightbox] = useState<{ url: string; type: string; alt: string } | null>(null);
+  // Buttons are always visible up front (the human's own spec) — clicking
+  // Accept/Counter while not signed in as a retailer opens the
+  // license-first inline auth flow instead of submitting immediately;
+  // `pendingAction` remembers which one to resume once it succeeds.
+  const [pendingAction, setPendingAction] = useState<"accept" | "counter" | null>(null);
+  const [justAuthenticated, setJustAuthenticated] = useState(false);
+  const isRetailer = sessionRole === "retailer" || justAuthenticated;
 
   function suggestedPrice(listing: CartListing, qty: number): number {
     if (
@@ -149,7 +155,17 @@ export function CartBuilder({
   // boxes, so it's never ambiguous what clicking it does. Computed and
   // sent directly rather than through setState-then-read, since a state
   // setter's new value isn't visible until the next render.
-  function acceptOffer() {
+  //
+  // `skipAuthGate` is only ever passed `true` from handleAuthenticated,
+  // right after the license-first flow just finished — passed explicitly
+  // rather than re-reading `isRetailer` from state, since a state update
+  // triggered moments earlier isn't guaranteed visible yet in this same
+  // call.
+  function acceptOffer(skipAuthGate?: boolean) {
+    if (!isRetailer && !skipAuthGate) {
+      setPendingAction("accept");
+      return;
+    }
     const fullItems: CartItemInput[] = sellers.flatMap((seller) =>
       seller.listings.map((listing) => ({
         listingId: listing.id,
@@ -164,8 +180,20 @@ export function CartBuilder({
     doSubmit("accept", fullItems, fullTerms);
   }
 
-  function counterOffer() {
+  function counterOffer(skipAuthGate?: boolean) {
+    if (!isRetailer && !skipAuthGate) {
+      setPendingAction("counter");
+      return;
+    }
     doSubmit("counter", items, terms);
+  }
+
+  function handleAuthenticated() {
+    setJustAuthenticated(true);
+    const pending = pendingAction;
+    setPendingAction(null);
+    if (pending === "accept") acceptOffer(true);
+    else if (pending === "counter") counterOffer(true);
   }
 
   if (declined) {
@@ -360,11 +388,24 @@ export function CartBuilder({
 
         {result?.error && <p className="text-xs text-red-600 mb-2">{result.error}</p>}
 
-        {sessionRole === "retailer" ? (
+        {pendingAction ? (
+          <LicenseAuthFlow onAuthenticated={handleAuthenticated} onCancel={() => setPendingAction(null)} />
+        ) : sessionRole && !isRetailer ? (
+          // Logged in as some other role entirely (grower/admin/etc) — the
+          // license-first flow below is specifically for a Retailer to
+          // sign in or create an account, which doesn't apply here.
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            This link is for Retailer accounts to place an order.
+          </p>
+        ) : (
+          // Buttons are always visible up front, whether or not anyone's
+          // signed in yet — clicking Accept/Counter is what triggers the
+          // license-first sign-in flow (acceptOffer/counterOffer above),
+          // not a separate "create an account first" landing state.
           <div className="grid grid-cols-3 gap-2">
             <button
               type="button"
-              onClick={acceptOffer}
+              onClick={() => acceptOffer()}
               disabled={submitting !== null}
               className="bg-green-700 text-white rounded-lg px-3 py-2 text-sm font-medium disabled:opacity-50"
               title="Send the seller's full menu back exactly as offered"
@@ -373,7 +414,7 @@ export function CartBuilder({
             </button>
             <button
               type="button"
-              onClick={counterOffer}
+              onClick={() => counterOffer()}
               disabled={items.length === 0 || submitting !== null || matchesFullOffer}
               className="border border-green-700 text-green-700 dark:text-green-400 rounded-lg px-3 py-2 text-sm font-medium disabled:opacity-50"
               title={
@@ -392,25 +433,6 @@ export function CartBuilder({
             >
               Reject
             </button>
-          </div>
-        ) : sessionRole ? (
-          <p className="text-xs text-gray-500 dark:text-gray-400">
-            This link is for Retailer accounts to place an order.
-          </p>
-        ) : (
-          <div className="flex gap-2">
-            <Link
-              href={`/signup?role=retailer&callbackUrl=${encodeURIComponent(callbackUrl)}`}
-              className="flex-1 text-center bg-green-700 hover:bg-green-800 text-white rounded-lg px-4 py-2 text-sm font-medium"
-            >
-              Create Retailer account
-            </Link>
-            <Link
-              href={`/login?callbackUrl=${encodeURIComponent(callbackUrl)}`}
-              className="flex-1 text-center border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 rounded-lg px-4 py-2 text-sm font-medium"
-            >
-              Sign in
-            </Link>
           </div>
         )}
       </div>

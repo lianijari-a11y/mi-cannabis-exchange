@@ -2,7 +2,14 @@ import "server-only";
 import { redirect } from "next/navigation";
 import { requireRole } from "@/lib/dal";
 import { prisma } from "@/lib/prisma";
-import { createListing, updateListing, getListingForEdit, bulkAddMediaToMenu } from "@/lib/listings";
+import {
+  createListing,
+  updateListing,
+  getListingForEdit,
+  bulkAddMediaToMenu,
+  bulkUpdatePricing,
+  type PriceAdjustment,
+} from "@/lib/listings";
 import { parseMediaUploadsField } from "@/lib/media";
 import { markLeadAssignedRep } from "@/lib/leads";
 import { CATEGORIES, UNITS, TERMS, SALES_REP_ASSISTABLE_ROLES } from "@/lib/constants";
@@ -361,6 +368,18 @@ export async function bulkAddPhotosAsAssistant(
 ) {
   const session = await requireRole(actorRole);
   return bulkAddMediaToMenu(batchId, session.user.id, assignments, { bypassOwnership: actorRole === "admin" });
+}
+
+// AE/Admin's side of bulk price changes — same bypassOwnership-only-for-
+// Admin posture as every other dual-role function here. See
+// lib/listings.ts's bulkUpdatePricing.
+export async function bulkUpdatePricingAsAssistant(
+  actorRole: "sales_rep" | "admin",
+  batchId: string,
+  adjustment: PriceAdjustment
+) {
+  const session = await requireRole(actorRole);
+  return bulkUpdatePricing(batchId, session.user.id, adjustment, { bypassOwnership: actorRole === "admin" });
 }
 
 // AE/Admin's own read of a listing to edit — same authorization as

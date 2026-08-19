@@ -1,7 +1,8 @@
 "use server";
 
 import bcrypt from "bcryptjs";
-import { requireRole } from "@/lib/dal";
+import { redirect } from "next/navigation";
+import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { generateAnonHandle } from "@/lib/anon-handle";
 import { lookupLicense } from "@/lib/license-registry";
@@ -9,16 +10,29 @@ import type { LicenseSearchResult } from "@/lib/assisted-seller-signup";
 
 // The retailer-side mirror of lib/assisted-seller-signup.ts's grower quick
 // signup — this is the "their broker who is admin create their profile and
-// submit the offer on their behalf" path from CLAUDE.md §36. Admin-only on
-// purpose, matching the human's own wording ("their broker who is admin") —
-// not opened up to Account Executive, since an AE builds wholesale menus on
-// a seller's behalf but has no equivalent standing relationship with
-// retailers responding to one.
+// submit the offer on their behalf" path from CLAUDE.md §36. §36 originally
+// kept this Admin-only on purpose, matching the human's own wording ("their
+// broker who is admin") — reasoning being an AE has no standing relationship
+// with retailers the way it does with the sellers it solicits. That was a
+// real, confirmed reversal later, not an oversight (see
+// lib/public-respond-actions.ts's comment on the same change) — the human
+// asked directly whether an Account Executive could also submit an offer on
+// a buyer's behalf, and confirmed yes. Kept the original reasoning here
+// rather than deleting it, same "record the reversal, don't silently
+// overwrite" posture used throughout this codebase.
+async function requireAdminOrSalesRep() {
+  const session = await auth();
+  if (!session?.user || (session.user.role !== "admin" && session.user.role !== "sales_rep")) {
+    redirect("/login");
+  }
+  return session;
+}
+
 export async function searchRetailerLicenseRegistry(
   query: string,
   mode: "number" | "name" | "phone"
 ): Promise<LicenseSearchResult[]> {
-  await requireRole("admin");
+  await requireAdminOrSalesRep();
 
   const q = query.trim();
   if (!q) return [];
@@ -51,7 +65,7 @@ export type CreateRetailerResult =
   | { ok: false; error: string };
 
 export async function createRetailerAccountForAdmin(formData: FormData): Promise<CreateRetailerResult> {
-  await requireRole("admin");
+  await requireAdminOrSalesRep();
 
   const licenseNumber = String(formData.get("licenseNumber") ?? "").trim();
   const contactName = String(formData.get("contactName") ?? "").trim();
@@ -91,6 +105,12 @@ export async function createRetailerAccountForAdmin(formData: FormData): Promise
       city: match.city ?? null,
       state: match.state ?? null,
       zip: match.zip ?? null,
+      // This password is a temp one Admin just typed in and will relay to
+      // the retailer — the license-first inline sign-in flow on a public
+      // menu/collection link (components/cart/license-auth-flow.tsx)
+      // checks this to prompt for a real password instead of the
+      // temporary one nobody expects the retailer to remember.
+      mustChangePassword: true,
     },
   });
 
@@ -108,7 +128,7 @@ export type ExistingRetailerResult = {
 };
 
 export async function searchExistingRetailers(query: string): Promise<ExistingRetailerResult[]> {
-  await requireRole("admin");
+  await requireAdminOrSalesRep();
   const q = query.trim();
   if (!q) return [];
   return prisma.user.findMany({

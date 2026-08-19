@@ -6,16 +6,21 @@ import { getOrCreateThread, addOfferRound, type RoundAction } from "@/lib/offers
 
 export type RespondResult = { ok: true; threadId: string } | { ok: false; error: string };
 
-// The write side of a shared listing link (CLAUDE.md §36) — reused by both
-// a real authenticated Retailer session (the self-serve path) and Admin
-// acting on a retailer's behalf (the broker-assisted path), since the
-// actual negotiation write is identical either way. Deliberately NOT
-// gated by requireRole("retailer") the way lib/retailer-actions.ts's
-// handleRetailerRespond is, since Admin needs to call this for someone
+// The write side of a shared listing link (CLAUDE.md §36) — reused by a
+// real authenticated Retailer session (the self-serve path), Admin acting
+// on a retailer's behalf (the broker-assisted path), and — added later,
+// on direct request — an Account Executive doing the same. §36 originally
+// kept this Admin-only on purpose ("their broker who is admin," no
+// equivalent standing relationship between an AE and a retailer) — that
+// was a real, confirmed reversal, not an oversight; recorded here rather
+// than silently overwriting the original reasoning. The actual negotiation
+// write is identical for all three callers. Deliberately NOT gated by
+// requireRole("retailer") the way lib/retailer-actions.ts's
+// handleRetailerRespond is, since Admin/AE need to call this for someone
 // else's retailerId — so authorization is checked explicitly here instead:
-// either the caller IS that retailer, or the caller is Admin. Never trust
-// the client's own UI-level gating for this, since retailerId is a plain
-// argument a client component could otherwise pass arbitrarily.
+// either the caller IS that retailer, or the caller is Admin/AE. Never
+// trust the client's own UI-level gating for this, since retailerId is a
+// plain argument a client component could otherwise pass arbitrarily.
 export async function respondToListingAsRetailer(
   listingId: string,
   retailerId: string,
@@ -24,8 +29,8 @@ export async function respondToListingAsRetailer(
 ): Promise<RespondResult> {
   const session = await auth();
   const isSelf = session?.user?.role === "retailer" && session.user.id === retailerId;
-  const isAdmin = session?.user?.role === "admin";
-  if (!isSelf && !isAdmin) {
+  const isAssistant = session?.user?.role === "admin" || session?.user?.role === "sales_rep";
+  if (!isSelf && !isAssistant) {
     return { ok: false, error: "Not authorized." };
   }
 

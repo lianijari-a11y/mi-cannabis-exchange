@@ -3,10 +3,12 @@
 import { useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { BulkPhotoUpload } from "@/components/seller/bulk-photo-upload";
+import { BulkPriceUpdate } from "@/components/seller/bulk-price-update";
 import { matchPhotosToMenu } from "@/lib/ai-listing";
 
-type ListingOption = { id: string; strainName: string };
+type ListingOption = { id: string; strainName: string; pricePerUnit: number; quantity: number; unit: string };
 type SaveResult = { ok: true; savedCount: number } | { ok: false; error: string };
+type PriceSaveResult = { ok: true; updatedCount: number } | { ok: false; error: string };
 
 // Groups the seller's own dashboard into menus (CLAUDE.md §40's grouping,
 // now on the seller's own portal too — it previously only existed on the
@@ -22,6 +24,7 @@ export function DashboardMenuGroup({
   activeCount,
   activeListings,
   saveAction,
+  priceSaveAction,
   defaultOpen,
   children,
 }: {
@@ -31,6 +34,10 @@ export function DashboardMenuGroup({
   activeCount: number;
   activeListings: ListingOption[];
   saveAction: (batchId: string, assignments: { listingId: string; url: string; contentType: string }[]) => Promise<SaveResult>;
+  priceSaveAction: (
+    batchId: string,
+    adjustment: { mode: "percent" | "dollar" | "targetTotal"; value: number }
+  ) => Promise<PriceSaveResult>;
   defaultOpen: boolean;
   children: React.ReactNode;
 }) {
@@ -61,12 +68,15 @@ export function DashboardMenuGroup({
       {open && (
         <div className="mt-3 space-y-3">
           {activeListings.length > 0 && (
-            <BulkPhotoUpload
-              batchId={batchId}
-              listings={activeListings}
-              matchAction={matchPhotosToMenu}
-              saveAction={saveAction}
-            />
+            <>
+              <BulkPhotoUpload
+                batchId={batchId}
+                listings={activeListings}
+                matchAction={matchPhotosToMenu}
+                saveAction={saveAction}
+              />
+              <BulkPriceUpdate batchId={batchId} listings={activeListings} saveAction={priceSaveAction} />
+            </>
           )}
           {children}
         </div>

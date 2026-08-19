@@ -52,7 +52,6 @@ export default async function PublicCollectionPage({
           sellers={collection.sellers}
           collectionId={id}
           sessionRole={session?.user?.role ?? null}
-          callbackUrl={`/collection/${id}`}
         />
       </main>
     </div>

@@ -52,7 +52,6 @@ export default async function PublicMenuPage({
         <CartBuilder
           sellers={[{ anonHandle: menu.postedByHandle, listings: menu.listings }]}
           sessionRole={session?.user?.role ?? null}
-          callbackUrl={`/menu/${batchId}`}
         />
       </main>
     </div>

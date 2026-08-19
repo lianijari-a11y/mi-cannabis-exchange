@@ -1,7 +1,7 @@
 import { requireRole } from "@/lib/dal";
 import { PortalShell } from "@/components/portal-shell";
 import { SellerDashboard } from "@/components/seller/seller-dashboard";
-import { bulkAddPhotosAction } from "./actions";
+import { bulkAddPhotosAction, bulkUpdatePricingAction } from "./actions";
 
 const NAV = [
   { href: "/grower", label: "My listings" },
@@ -15,7 +15,12 @@ export default async function GrowerPage() {
 
   return (
     <PortalShell roleLabel="Grower" navItems={NAV}>
-      <SellerDashboard sellerId={session.user.id} basePath="/grower" bulkPhotoSaveAction={bulkAddPhotosAction} />
+      <SellerDashboard
+        sellerId={session.user.id}
+        basePath="/grower"
+        bulkPhotoSaveAction={bulkAddPhotosAction}
+        bulkPriceSaveAction={bulkUpdatePricingAction}
+      />
     </PortalShell>
   );
 }

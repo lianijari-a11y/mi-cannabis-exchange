@@ -31,5 +31,13 @@ export async function resetUserPassword(
   }
 
   const passwordHash = await bcrypt.hash(newPassword, 10);
-  await prisma.user.update({ where: { id: targetUserId }, data: { passwordHash } });
+  // Someone else chose this password on the account holder's behalf —
+  // same signal createRetailerAccountForAdmin sets at creation, checked
+  // by the license-first inline sign-in flow on a public menu/collection
+  // link (components/cart/license-auth-flow.tsx) to prompt a retailer for
+  // a real password instead of the one just reset for them.
+  await prisma.user.update({
+    where: { id: targetUserId },
+    data: { passwordHash, mustChangePassword: true },
+  });
 }

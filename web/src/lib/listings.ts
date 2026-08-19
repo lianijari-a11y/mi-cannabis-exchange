@@ -234,6 +234,77 @@ export async function bulkAddMediaToMenu(
   return { ok: true, savedCount };
 }
 
+// Bulk price change for a whole menu at once — "by percentage, or dollar
+// amount," plus a third mode raised right after: "a total dollar amount
+// for the entire menu, without having to go product by product." Same
+// per-listing authorization as bulkAddMediaToMenu (seller/AE/assignedRep/
+// bypass), only ever touches listings that are still "active", and skips
+// (rather than fails the whole batch on) anything the caller has no
+// standing over.
+export type PriceAdjustment =
+  | { mode: "percent"; value: number } // e.g. 10 = +10%, -15 = -15%
+  | { mode: "dollar"; value: number } // flat $ per unit, +/-
+  | { mode: "targetTotal"; value: number }; // desired sum of price*quantity across the whole menu
+
+export async function bulkUpdatePricing(
+  batchId: string,
+  callerId: string,
+  adjustment: PriceAdjustment,
+  opts?: { bypassOwnership?: boolean }
+): Promise<{ ok: true; updatedCount: number } | { ok: false; error: string }> {
+  const listings = await prisma.listing.findMany({
+    where: { batchId, status: "active" },
+    include: { postedBy: { select: { assignedSalesRepId: true } } },
+  });
+  if (listings.length === 0) return { ok: false, error: "No active listings in this menu." };
+
+  const eligible = listings.filter(
+    (l) =>
+      opts?.bypassOwnership ||
+      l.postedById === callerId ||
+      l.createdBySalesRepId === callerId ||
+      l.postedBy.assignedSalesRepId === callerId
+  );
+  if (eligible.length === 0) {
+    return { ok: false, error: "Not authorized for any listing in this menu." };
+  }
+
+  // Target-total mode scales every price by the same factor so the new
+  // sum lands on the requested total — proportional, not an equal split,
+  // so a $50/lb strain and a $2000/lb strain both move by the same
+  // percentage rather than ending up priced the same.
+  let scaleFactor = 1;
+  if (adjustment.mode === "targetTotal") {
+    const currentTotal = eligible.reduce((sum, l) => sum + l.pricePerUnit * l.quantity, 0);
+    if (currentTotal <= 0) return { ok: false, error: "Can't scale from a menu with no value yet." };
+    if (adjustment.value <= 0) return { ok: false, error: "Target total must be greater than $0." };
+    scaleFactor = adjustment.value / currentTotal;
+  }
+
+  let updatedCount = 0;
+  for (const listing of eligible) {
+    let newPrice: number;
+    if (adjustment.mode === "percent") {
+      newPrice = listing.pricePerUnit * (1 + adjustment.value / 100);
+    } else if (adjustment.mode === "dollar") {
+      newPrice = listing.pricePerUnit + adjustment.value;
+    } else {
+      newPrice = listing.pricePerUnit * scaleFactor;
+    }
+    // Never let a price change zero or invert a listing's value — floor
+    // at a cent, same as every other price field in this app.
+    newPrice = Math.max(0.01, Math.round(newPrice * 100) / 100);
+
+    await prisma.listing.update({
+      where: { id: listing.id },
+      data: { pricePerUnit: newPrice, lastConfirmedAt: new Date() },
+    });
+    updatedCount++;
+  }
+
+  return { ok: true, updatedCount };
+}
+
 // Broader read for the Sales Rep/Admin edit page — same authorization rule
 // as updateListing above (postedById OR createdBySalesRepId, or bypass for
 // Admin). getListingForSeller below stays strict to postedById only, since
