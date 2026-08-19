@@ -31,6 +31,19 @@ const EMPTY_DRAFT: ListingDraft = {
   notes: null,
 };
 
+// Bulk-mode rows need a stable identity beyond their array index, since a
+// removed row would otherwise desync the per-row file input from the row it
+// was attached to (or, worse, silently carry over to whatever row slides
+// into that index next). `_key` is client-only — never sent to the AI
+// structuring call, only used to name each row's file input (`media_<key>`)
+// and to let the server correlate that input back to the right JSON row
+// after submit (see lib/sales-actions.ts's handleCreateListingsAsAssistantBulk).
+type BulkRow = ListingDraft & { _key: string };
+
+function withKeys(drafts: ListingDraft[]): BulkRow[] {
+  return drafts.map((d) => ({ ...d, _key: crypto.randomUUID() }));
+}
+
 // Sellers post inventory constantly — this lets them paste whatever raw
 // notes they already have (a text message, a spreadsheet row) and have
 // Claude draft the structured fields below. The draft only ever pre-fills
@@ -64,7 +77,7 @@ export function ListingForm({
   const [pending, startTransition] = useTransition();
 
   const [bulkMode, setBulkMode] = useState(false);
-  const [bulkDrafts, setBulkDrafts] = useState<ListingDraft[] | null>(null);
+  const [bulkDrafts, setBulkDrafts] = useState<BulkRow[] | null>(null);
 
   function set<K extends keyof ListingDraft>(key: K, value: ListingDraft[K]) {
     setDraft((d) => ({ ...d, [key]: value }));
@@ -101,7 +114,7 @@ export function ListingForm({
           setAiError(result.error);
           return;
         }
-        setBulkDrafts(result.drafts);
+        setBulkDrafts(withKeys(result.drafts));
       });
       return;
     }
@@ -195,6 +208,7 @@ export function ListingForm({
                       <th className="text-left font-medium px-2 py-1.5">Qty</th>
                       <th className="text-left font-medium px-2 py-1.5">Unit</th>
                       <th className="text-left font-medium px-2 py-1.5">Price ($)</th>
+                      <th className="text-left font-medium px-2 py-1.5">Photos/videos</th>
                       <th className="px-2 py-1.5" />
                     </tr>
                   </thead>
@@ -203,7 +217,7 @@ export function ListingForm({
                       const rowInvalid = !d.strainName.trim() || !((d.quantity ?? 0) > 0) || !((d.pricePerUnit ?? 0) > 0);
                       return (
                         <tr
-                          key={i}
+                          key={d._key}
                           className={`border-t border-gray-100 dark:border-gray-800 ${rowInvalid ? "bg-amber-50 dark:bg-amber-950/20" : ""}`}
                         >
                           <td className="px-2 py-1">
@@ -271,6 +285,15 @@ export function ListingForm({
                             />
                           </td>
                           <td className="px-2 py-1">
+                            <input
+                              type="file"
+                              name={`media_${d._key}`}
+                              accept="image/*,video/*"
+                              multiple
+                              className="w-24 text-[10px] file:mr-1 file:rounded file:border-0 file:bg-green-700 file:text-white file:px-1.5 file:py-0.5 file:text-[10px]"
+                            />
+                          </td>
+                          <td className="px-2 py-1">
                             <button
                               type="button"
                               onClick={() => removeBulkDraft(i)}
@@ -298,8 +321,8 @@ export function ListingForm({
               </p>
             )}
             <p className="text-[11px] text-gray-400">
-              Bulk-posted listings don&apos;t carry photos — add those later from each listing&apos;s
-              own detail page if needed.
+              Optional: attach a photo or video per row above. Skip it and add one later from that
+              listing&apos;s own detail page if you&apos;d rather.
             </p>
           </>
         ) : (

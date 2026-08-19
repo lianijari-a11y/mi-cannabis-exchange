@@ -2,7 +2,7 @@ import "server-only";
 import { redirect } from "next/navigation";
 import { requireRole } from "@/lib/dal";
 import { prisma } from "@/lib/prisma";
-import { createListing } from "@/lib/listings";
+import { createListing, updateListing, getListingForEdit } from "@/lib/listings";
 import { CATEGORIES, UNITS, TERMS, SALES_REP_ASSISTABLE_ROLES } from "@/lib/constants";
 import type { ListingDraft } from "@/lib/ai-listing";
 
@@ -101,9 +101,10 @@ export async function handleCreateListingAsAssistant(
 // handleCreateListingAsAssistant above, but for a whole batch of drafts at
 // once — added after a real Account Executive pasted a 21-strain price list
 // into the single-item AI structuring flow and it broke (see CLAUDE.md).
-// No per-item media here: a pasted list doesn't carry per-item photos, so
-// bulk-created listings post text-only — the seller can add photos later
-// from their own listing detail page like any other listing.
+// Each row can carry its own photos/videos too — the client tags every draft
+// row with a stable `_key` (see listing-form.tsx) and submits that row's
+// files under a matching `media_<key>` field, since a plain array index
+// would desync from the JSON `drafts` payload once a row is removed.
 export async function handleCreateListingsAsAssistantBulk(
   actorRole: "sales_rep" | "admin",
   redirectBasePath: string,
@@ -117,7 +118,7 @@ export async function handleCreateListingsAsAssistantBulk(
     redirect(`${redirectBasePath}/listings/new?error=${encodeURIComponent("Choose a valid grower or processor to post for.")}`);
   }
 
-  let drafts: ListingDraft[];
+  let drafts: (ListingDraft & { _key?: string })[];
   try {
     drafts = JSON.parse(String(formData.get("drafts") ?? "[]"));
   } catch {
@@ -149,6 +150,11 @@ export async function handleCreateListingsAsAssistantBulk(
     if (!Number.isFinite(quantity) || quantity <= 0) continue;
     if (!Number.isFinite(pricePerUnit) || pricePerUnit <= 0) continue;
 
+    const rowKey = typeof d?._key === "string" ? d._key : null;
+    const files = rowKey
+      ? formData.getAll(`media_${rowKey}`).filter((f): f is File => f instanceof File)
+      : [];
+
     await createListing(
       seller.id,
       seller.role,
@@ -163,7 +169,7 @@ export async function handleCreateListingsAsAssistantBulk(
         notes: typeof d?.notes === "string" && d.notes.trim() ? d.notes.trim() : null,
         expiresAt,
       },
-      [],
+      files,
       session.user.id
     );
     created++;
@@ -174,6 +180,81 @@ export async function handleCreateListingsAsAssistantBulk(
   }
 
   redirect(redirectBasePath);
+}
+
+// The AE/Admin side of "edit the menu as it sells" — a Sales Rep can edit
+// any listing they personally built (createdBySalesRepId match, checked in
+// lib/listings.ts's updateListing); Admin can edit ANY listing platform-wide
+// (bypassOwnership: true), matching Admin's existing unrestricted reach
+// elsewhere (e.g. updateListingVisibility). redirectBasePath is the page's
+// own listings-detail base, e.g. "/sales/listings" or "/admin/listings".
+export async function handleEditListingAsAssistant(
+  actorRole: "sales_rep" | "admin",
+  redirectBasePath: string,
+  formData: FormData
+) {
+  const session = await requireRole(actorRole);
+  const listingId = String(formData.get("listingId") ?? "");
+
+  const strainName = String(formData.get("strainName") ?? "").trim();
+  const category = String(formData.get("category") ?? "");
+  const thcRaw = String(formData.get("thcPercent") ?? "").trim();
+  const quantity = Number(formData.get("quantity"));
+  const unit = String(formData.get("unit") ?? "");
+  const pricePerUnit = Number(formData.get("pricePerUnit"));
+  const terms = String(formData.get("terms") ?? "");
+  const notes = String(formData.get("notes") ?? "").trim();
+
+  if (!strainName || !CATEGORIES.includes(category as (typeof CATEGORIES)[number])) {
+    redirect(`${redirectBasePath}/${listingId}?error=${encodeURIComponent("Fill in the required fields.")}`);
+  }
+  if (!Number.isFinite(quantity) || quantity <= 0) {
+    redirect(`${redirectBasePath}/${listingId}?error=${encodeURIComponent("Quantity must be a positive number.")}`);
+  }
+  if (!Number.isFinite(pricePerUnit) || pricePerUnit <= 0) {
+    redirect(`${redirectBasePath}/${listingId}?error=${encodeURIComponent("Price must be a positive number.")}`);
+  }
+  if (!TERMS.includes(terms as (typeof TERMS)[number])) {
+    redirect(`${redirectBasePath}/${listingId}?error=${encodeURIComponent("Choose valid terms.")}`);
+  }
+
+  const files = formData.getAll("media").filter((f): f is File => f instanceof File);
+  const removedMediaIds = formData.getAll("removeMedia").map(String);
+
+  try {
+    await updateListing(
+      listingId,
+      session.user.id,
+      {
+        strainName,
+        category: category as (typeof CATEGORIES)[number],
+        thcPercent: thcRaw ? Number(thcRaw) : null,
+        quantity,
+        unit: unit as never,
+        pricePerUnit,
+        terms: terms as (typeof TERMS)[number],
+        notes: notes || null,
+      },
+      files,
+      removedMediaIds,
+      { bypassOwnership: actorRole === "admin" }
+    );
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Couldn't update listing.";
+    redirect(`${redirectBasePath}/${listingId}?error=${encodeURIComponent(message)}`);
+  }
+
+  redirect(`${redirectBasePath}/${listingId}`);
+}
+
+// AE/Admin's own read of a listing to edit — same authorization as
+// handleEditListingAsAssistant above.
+export async function getListingForAssistantEdit(
+  actorRole: "sales_rep" | "admin",
+  listingId: string
+) {
+  const session = await requireRole(actorRole);
+  return getListingForEdit(listingId, session.user.id, { bypassOwnership: actorRole === "admin" });
 }
 
 // Listings a Sales Rep (or Admin, via the same page) has personally built —

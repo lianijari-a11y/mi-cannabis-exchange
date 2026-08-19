@@ -10,6 +10,7 @@ import {
   setPickupInstructions,
   acceptRejectionCounter,
   requireReturnInsteadOfCounter,
+  editListing,
 } from "./actions";
 
 const NAV = [
@@ -21,11 +22,14 @@ const NAV = [
 
 export default async function GrowerListingDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ error?: string }>;
 }) {
   const session = await requireRole("grower");
   const { id } = await params;
+  const { error } = await searchParams;
 
   return (
     <PortalShell roleLabel="Grower" navItems={NAV}>
@@ -40,6 +44,8 @@ export default async function GrowerListingDetailPage({
         setPickupInstructionsAction={setPickupInstructions}
         acceptRejectionCounterAction={acceptRejectionCounter}
         requireReturnAction={requireReturnInsteadOfCounter}
+        editAction={editListing}
+        editError={error ? decodeURIComponent(error) : undefined}
       />
     </PortalShell>
   );

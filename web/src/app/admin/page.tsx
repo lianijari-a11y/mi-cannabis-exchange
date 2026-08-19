@@ -4,7 +4,12 @@ import { pendingLicenseUsers, allUsers, licenseExpiryAlerts } from "@/lib/admin"
 import { transporterRating, sellerRating, retailerRating } from "@/lib/market";
 import { StateMarketWidget } from "@/components/state-market-widget";
 import { ROLE_LABELS, type Role } from "@/lib/constants";
-import { reviewLicense, togglePreferredTransporter, setSalesRepRate } from "./actions";
+import {
+  reviewLicense,
+  togglePreferredTransporter,
+  setSalesRepRate,
+  resetUserPasswordAction,
+} from "./actions";
 
 const NAV = [
   { href: "/admin", label: "Overview" },
@@ -21,10 +26,10 @@ const NAV = [
 export default async function AdminPage({
   searchParams,
 }: {
-  searchParams: Promise<{ staffCreated?: string }>;
+  searchParams: Promise<{ staffCreated?: string; passwordReset?: string; error?: string }>;
 }) {
   await requireRole("admin");
-  const { staffCreated } = await searchParams;
+  const { staffCreated, passwordReset, error } = await searchParams;
   const [pending, users, expiring] = await Promise.all([
     pendingLicenseUsers(),
     allUsers(),
@@ -50,6 +55,16 @@ export default async function AdminPage({
       {staffCreated && (
         <p className="text-xs text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-900 rounded-lg p-2 mb-4">
           Staff account created — it'll show up in the user list below.
+        </p>
+      )}
+      {passwordReset && (
+        <p className="text-xs text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-900 rounded-lg p-2 mb-4">
+          Password reset — relay the new password to the user directly.
+        </p>
+      )}
+      {error && (
+        <p className="text-xs text-red-600 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-900 rounded-lg p-2 mb-4">
+          {decodeURIComponent(error)}
         </p>
       )}
       <StateMarketWidget />
@@ -169,6 +184,7 @@ export default async function AdminPage({
                   <th className="text-left px-4 py-2 font-medium">Rating</th>
                   <th className="text-left px-4 py-2 font-medium">Preferred</th>
                   <th className="text-left px-4 py-2 font-medium">Commission rate</th>
+                  <th className="text-left px-4 py-2 font-medium">Reset password</th>
                 </tr>
               </thead>
               <tbody>
@@ -237,6 +253,21 @@ export default async function AdminPage({
                           </button>
                         </form>
                       )}
+                    </td>
+                    <td className="px-4 py-2">
+                      <form action={resetUserPasswordAction} className="flex items-center gap-1">
+                        <input type="hidden" name="userId" value={user.id} />
+                        <input
+                          name="newPassword"
+                          type="text"
+                          minLength={8}
+                          placeholder="New password"
+                          className="w-28 border border-gray-300 dark:border-gray-700 rounded px-1 py-0.5 text-xs bg-transparent"
+                        />
+                        <button type="submit" className="text-[10px] text-green-700 dark:text-green-400 underline">
+                          Reset
+                        </button>
+                      </form>
                     </td>
                   </tr>
                 ))}

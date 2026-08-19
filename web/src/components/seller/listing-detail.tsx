@@ -4,10 +4,10 @@ import { getListingForSeller } from "@/lib/listings";
 import { threadsForListing, recordThreadView } from "@/lib/offers";
 import { retailerRatingForThread } from "@/lib/market";
 import { splitContractsForListing } from "@/lib/split-contracts";
-import { CATEGORY_LABELS, TERMS_LABELS, type Category, type Terms } from "@/lib/constants";
+import { TERMS_LABELS, type Terms } from "@/lib/constants";
 import { RespondForm } from "@/components/seller/respond-form";
 import { DealPanelSeller } from "@/components/deal/deal-panel-seller";
-import { ShareListingLink } from "@/components/seller/share-listing-link";
+import { ListingHeaderCard } from "@/components/seller/listing-header-card";
 
 export async function SellerListingDetail({
   listingId,
@@ -20,6 +20,8 @@ export async function SellerListingDetail({
   setPickupInstructionsAction,
   acceptRejectionCounterAction,
   requireReturnAction,
+  editAction,
+  editError,
 }: {
   listingId: string;
   sellerId: string;
@@ -31,6 +33,8 @@ export async function SellerListingDetail({
   setPickupInstructionsAction?: (formData: FormData) => void;
   acceptRejectionCounterAction?: (formData: FormData) => void;
   requireReturnAction?: (formData: FormData) => void;
+  editAction?: (formData: FormData) => void;
+  editError?: string;
 }) {
   const listing = await getListingForSeller(listingId, sellerId);
   if (!listing) notFound();
@@ -52,61 +56,13 @@ export async function SellerListingDetail({
 
   return (
     <div className="space-y-6">
-      <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-4">
-        <h1 className="font-semibold text-gray-900 dark:text-gray-100">{listing.strainName}</h1>
-        <p className="text-sm text-gray-500 dark:text-gray-400">
-          {CATEGORY_LABELS[listing.category as Category] ?? listing.category}
-          {listing.thcPercent != null ? ` · ${listing.thcPercent}% THC` : ""}
-        </p>
-        <p className="mt-2 text-sm text-gray-700 dark:text-gray-300">
-          {listing.quantity} {listing.unit} · ${listing.pricePerUnit}/{listing.unit} ·{" "}
-          {TERMS_LABELS[listing.terms as Terms] ?? listing.terms}
-        </p>
-        {listing.notes && (
-          <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">{listing.notes}</p>
-        )}
-        {listing.status === "active" && confirmFreshAction && (
-          <div className="mt-3 flex items-center gap-2">
-            <p className="text-xs text-gray-400 dark:text-gray-500">
-              {staleDays === 0 ? "Confirmed available today" : `Last confirmed available ${staleDays}d ago`}
-            </p>
-            <form action={confirmFreshAction}>
-              <input type="hidden" name="listingId" value={listing.id} />
-              <button
-                type="submit"
-                className="text-[10px] uppercase tracking-wide border border-gray-300 dark:border-gray-700 text-gray-600 dark:text-gray-300 rounded-full px-2 py-0.5"
-              >
-                Still available? Confirm
-              </button>
-            </form>
-          </div>
-        )}
-        {listing.status === "active" && listing.visibility === "all" && (
-          <ShareListingLink listingId={listing.id} />
-        )}
-        {listing.media.length > 0 && (
-          <div className="mt-3 flex gap-2 overflow-x-auto">
-            {listing.media.map((m) => (
-              <div key={m.id} className="relative shrink-0">
-                {m.type === "video" ? (
-                  <video src={m.url} controls className="h-28 rounded-lg" />
-                ) : (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={m.url} alt="" className="h-28 rounded-lg object-cover" />
-                )}
-                {m.redactionAttempted && m.redactionRegionsFound > 0 && (
-                  <span
-                    title="Experimental auto-redaction blacked out something it thought was a logo or contact info — double-check this photo before relying on it."
-                    className="absolute bottom-1 left-1 text-[9px] bg-amber-600 text-white rounded px-1.5 py-0.5"
-                  >
-                    Auto-redacted — review
-                  </span>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+      <ListingHeaderCard
+        listing={listing}
+        staleDays={staleDays}
+        confirmFreshAction={confirmFreshAction}
+        editAction={editAction}
+        editError={editError}
+      />
 
       <div>
         <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-2">

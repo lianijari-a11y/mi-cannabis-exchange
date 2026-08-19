@@ -10,6 +10,7 @@ import {
   setPickupInstructions,
   acceptRejectionCounter,
   requireReturnInsteadOfCounter,
+  editListing,
 } from "./actions";
 
 const NAV = [
@@ -23,11 +24,14 @@ const NAV = [
 
 export default async function ProcessorListingDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ error?: string }>;
 }) {
   const session = await requireRole("processor");
   const { id } = await params;
+  const { error } = await searchParams;
 
   return (
     <PortalShell roleLabel="Processor" navItems={NAV}>
@@ -42,6 +46,8 @@ export default async function ProcessorListingDetailPage({
         setPickupInstructionsAction={setPickupInstructions}
         acceptRejectionCounterAction={acceptRejectionCounter}
         requireReturnAction={requireReturnInsteadOfCounter}
+        editAction={editListing}
+        editError={error ? decodeURIComponent(error) : undefined}
       />
     </PortalShell>
   );

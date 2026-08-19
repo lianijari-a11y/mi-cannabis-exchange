@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Share2 } from "lucide-react";
 
 // "Get shareable link" (CLAUDE.md §36) — only meaningful for a listing any
@@ -9,7 +9,13 @@ import { Share2 } from "lucide-react";
 // restriction, so the caller only renders this when visibility === "all".
 export function ShareListingLink({ listingId }: { listingId: string }) {
   const [copied, setCopied] = useState(false);
-  const url = typeof window !== "undefined" ? `${window.location.origin}/listing/${listingId}` : `/listing/${listingId}`;
+  // Rendering window.location.origin directly (branching on `typeof window`)
+  // mismatches server vs. client output and triggers a hydration error —
+  // start with the relative path (same on both), then fill in the real
+  // origin client-side only, after mount.
+  const [origin, setOrigin] = useState("");
+  useEffect(() => setOrigin(window.location.origin), []);
+  const url = `${origin}/listing/${listingId}`;
 
   async function copy() {
     try {

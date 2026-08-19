@@ -9,6 +9,7 @@ import {
   handleSetPickupInstructions,
   handleAcceptRejectionCounter,
   handleRequireReturnInsteadOfCounter,
+  handleEditListing,
 } from "@/lib/seller-actions";
 
 export async function respond(formData: FormData) {
@@ -41,4 +42,8 @@ export async function acceptRejectionCounter(formData: FormData) {
 
 export async function requireReturnInsteadOfCounter(formData: FormData) {
   await handleRequireReturnInsteadOfCounter("processor", formData);
+}
+
+export async function editListing(formData: FormData) {
+  await handleEditListing("processor", formData);
 }

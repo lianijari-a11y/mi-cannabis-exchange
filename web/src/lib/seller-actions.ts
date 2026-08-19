@@ -2,7 +2,7 @@ import "server-only";
 import { redirect } from "next/navigation";
 import { requireRole } from "@/lib/dal";
 import { prisma } from "@/lib/prisma";
-import { createListing, confirmListingFresh } from "@/lib/listings";
+import { createListing, confirmListingFresh, updateListing } from "@/lib/listings";
 import { addOfferRound, type RoundAction } from "@/lib/offers";
 import { uploadInvoice, acceptShipmentSchedule, setPickupInstructions } from "@/lib/shipments";
 import { respondToSplitContract } from "@/lib/split-contracts";
@@ -75,6 +75,66 @@ export async function handleCreateListing(role: SellerRole, formData: FormData) 
   );
 
   redirect(`/${role}`);
+}
+
+// Sellers keep selling out of the same listing over days — price, quantity,
+// and photos need to change while it's still live, not just get a
+// freshness bump. Mirrors handleCreateListing's field parsing closely on
+// purpose. Only reachable while the listing is still "active" (enforced in
+// lib/listings.ts's updateListing) — a closed/expired listing isn't
+// editable, it's done.
+export async function handleEditListing(role: SellerRole, formData: FormData) {
+  const session = await requireRole(role);
+  const listingId = String(formData.get("listingId") ?? "");
+
+  const strainName = String(formData.get("strainName") ?? "").trim();
+  const category = String(formData.get("category") ?? "");
+  const thcRaw = String(formData.get("thcPercent") ?? "").trim();
+  const quantity = Number(formData.get("quantity"));
+  const unit = String(formData.get("unit") ?? "");
+  const pricePerUnit = Number(formData.get("pricePerUnit"));
+  const terms = String(formData.get("terms") ?? "");
+  const notes = String(formData.get("notes") ?? "").trim();
+
+  if (!strainName || !CATEGORIES.includes(category as (typeof CATEGORIES)[number])) {
+    redirect(`/${role}/listings/${listingId}?error=${encodeURIComponent("Fill in the required fields.")}`);
+  }
+  if (!Number.isFinite(quantity) || quantity <= 0) {
+    redirect(`/${role}/listings/${listingId}?error=${encodeURIComponent("Quantity must be a positive number.")}`);
+  }
+  if (!Number.isFinite(pricePerUnit) || pricePerUnit <= 0) {
+    redirect(`/${role}/listings/${listingId}?error=${encodeURIComponent("Price must be a positive number.")}`);
+  }
+  if (!TERMS.includes(terms as (typeof TERMS)[number])) {
+    redirect(`/${role}/listings/${listingId}?error=${encodeURIComponent("Choose valid terms.")}`);
+  }
+
+  const files = formData.getAll("media").filter((f): f is File => f instanceof File);
+  const removedMediaIds = formData.getAll("removeMedia").map(String);
+
+  try {
+    await updateListing(
+      listingId,
+      session.user.id,
+      {
+        strainName,
+        category: category as (typeof CATEGORIES)[number],
+        thcPercent: thcRaw ? Number(thcRaw) : null,
+        quantity,
+        unit: unit as never,
+        pricePerUnit,
+        terms: terms as (typeof TERMS)[number],
+        notes: notes || null,
+      },
+      files,
+      removedMediaIds
+    );
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Couldn't update listing.";
+    redirect(`/${role}/listings/${listingId}?error=${encodeURIComponent(message)}`);
+  }
+
+  redirect(`/${role}/listings/${listingId}`);
 }
 
 // Shared by every seller-side "respond to an offer" action.

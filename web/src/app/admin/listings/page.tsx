@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { requireRole } from "@/lib/dal";
 import { PortalShell } from "@/components/portal-shell";
 import { allListingsForAdmin, retailersForPicker } from "@/lib/admin";
@@ -41,15 +42,25 @@ export default async function AdminListingsPage() {
                   {l.postedBy.businessName ?? l.postedBy.fullName} ({l.postedBy.role}) · {l.status}
                 </p>
               </div>
-              <span
-                className={`text-[10px] rounded-full px-2 py-0.5 border shrink-0 ${
-                  l.visibility === "all"
-                    ? "text-gray-500 border-gray-200 dark:border-gray-700"
-                    : "text-amber-700 border-amber-300 dark:border-amber-800"
-                }`}
-              >
-                {l.visibility === "all" ? "All retailers" : `Exclusive (${l.exclusiveRetailerIds.length})`}
-              </span>
+              <div className="flex items-center gap-2 shrink-0">
+                {l.status === "active" && (
+                  <Link
+                    href={`/admin/listings/${l.id}`}
+                    className="text-xs text-green-700 dark:text-green-400 underline"
+                  >
+                    Edit
+                  </Link>
+                )}
+                <span
+                  className={`text-[10px] rounded-full px-2 py-0.5 border ${
+                    l.visibility === "all"
+                      ? "text-gray-500 border-gray-200 dark:border-gray-700"
+                      : "text-amber-700 border-amber-300 dark:border-amber-800"
+                  }`}
+                >
+                  {l.visibility === "all" ? "All retailers" : `Exclusive (${l.exclusiveRetailerIds.length})`}
+                </span>
+              </div>
             </div>
             <ListingVisibilityForm
               listingId={l.id}

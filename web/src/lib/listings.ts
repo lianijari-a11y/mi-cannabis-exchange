@@ -75,6 +75,96 @@ export async function createListing(
   return listing;
 }
 
+export type ListingEditInput = {
+  strainName: string;
+  category: Category;
+  thcPercent: number | null;
+  quantity: number;
+  unit: Unit;
+  pricePerUnit: number;
+  terms: Terms;
+  notes: string | null;
+};
+
+// Growers/processors sell out of the same menu over days — price, quantity,
+// and photos all need to change while the listing stays live, not just via
+// a "still available" freshness bump. Authorized for the seller who posted
+// it (postedById) OR the Sales Rep/Admin who built it on the seller's behalf
+// (createdBySalesRepId) — the same two identities CLAUDE.md §13 already lets
+// post a listing in the first place. `bypassOwnership` is only ever passed
+// true from an Admin-gated caller (already requireRole("admin")'d) so any
+// Admin can fix any listing, matching Admin's existing platform-wide reach
+// elsewhere (e.g. updateListingVisibility has no ownership check either).
+export async function updateListing(
+  listingId: string,
+  callerId: string,
+  input: ListingEditInput,
+  newFiles: File[],
+  removedMediaIds: string[],
+  opts?: { bypassOwnership?: boolean }
+) {
+  const listing = await prisma.listing.findUnique({ where: { id: listingId } });
+  if (!listing) throw new Error("Listing not found.");
+  const authorized =
+    opts?.bypassOwnership || listing.postedById === callerId || listing.createdBySalesRepId === callerId;
+  if (!authorized) throw new Error("Not authorized for this listing.");
+  if (listing.status !== "active") {
+    throw new Error("Only an active listing can be edited.");
+  }
+
+  if (removedMediaIds.length > 0) {
+    await prisma.listingMedia.deleteMany({ where: { id: { in: removedMediaIds }, listingId } });
+  }
+
+  const remainingCount = await prisma.listingMedia.count({ where: { listingId } });
+  for (const [i, file] of newFiles.entries()) {
+    if (!file || file.size === 0) continue;
+    const saved = await saveMediaFile(listingId, file);
+    await prisma.listingMedia.create({
+      data: {
+        listingId,
+        url: saved.url,
+        type: saved.type,
+        sortOrder: remainingCount + i,
+        redactionAttempted: saved.redactionAttempted,
+        redactionRegionsFound: saved.redactionRegionsFound,
+        redactionError: saved.redactionError ?? null,
+      },
+    });
+  }
+
+  await prisma.listing.update({
+    where: { id: listingId },
+    data: {
+      strainName: input.strainName,
+      category: input.category,
+      thcPercent: input.thcPercent,
+      quantity: input.quantity,
+      unit: input.unit,
+      pricePerUnit: input.pricePerUnit,
+      terms: input.terms,
+      notes: input.notes,
+      // Same "any edit counts as a freshness signal" intent as
+      // confirmListingFresh — see the comment on lastConfirmedAt in
+      // schema.prisma.
+      lastConfirmedAt: new Date(),
+    },
+  });
+}
+
+// Broader read for the Sales Rep/Admin edit page — same authorization rule
+// as updateListing above (postedById OR createdBySalesRepId, or bypass for
+// Admin). getListingForSeller below stays strict to postedById only, since
+// that's the seller's own dashboard.
+export async function getListingForEdit(listingId: string, callerId: string, opts?: { bypassOwnership?: boolean }) {
+  const listing = await prisma.listing.findUnique({ where: { id: listingId }, include: { media: true } });
+  if (!listing) return null;
+  const authorized =
+    opts?.bypassOwnership || listing.postedById === callerId || listing.createdBySalesRepId === callerId;
+  if (!authorized) return null;
+  return listing;
+}
+
 // A seller's own listing management view — no counterparty identity involved,
 // so no anonymization concern here.
 export async function listingsForSeller(sellerId: string) {

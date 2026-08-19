@@ -3,6 +3,7 @@ import { requireRole } from "@/lib/dal";
 import { PortalShell } from "@/components/portal-shell";
 import { listingsCreatedByAssistant } from "@/lib/sales-actions";
 import { StateMarketWidget } from "@/components/state-market-widget";
+import { ResetPasswordPanel } from "@/components/sales/reset-password-panel";
 import { CATEGORY_LABELS, type Category } from "@/lib/constants";
 
 const NAV = [
@@ -31,6 +32,10 @@ export default async function SalesRepPage() {
       </div>
 
       <StateMarketWidget />
+
+      <div className="mb-6">
+        <ResetPasswordPanel />
+      </div>
 
       {listings.length === 0 && (
         <p className="text-sm text-gray-500 dark:text-gray-400">
@@ -64,6 +69,14 @@ export default async function SalesRepPage() {
             <p className="mt-2 text-sm text-gray-700 dark:text-gray-300">
               {listing.quantity} {listing.unit} · ${listing.pricePerUnit}/{listing.unit}
             </p>
+            {listing.status === "active" && (
+              <Link
+                href={`/sales/listings/${listing.id}`}
+                className="mt-2 inline-block text-xs text-green-700 dark:text-green-400 underline"
+              >
+                Edit
+              </Link>
+            )}
           </div>
         ))}
       </div>
