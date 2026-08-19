@@ -376,10 +376,11 @@ export async function bulkAddPhotosAsAssistant(
 export async function bulkUpdatePricingAsAssistant(
   actorRole: "sales_rep" | "admin",
   batchId: string,
-  adjustment: PriceAdjustment
+  adjustment: PriceAdjustment,
+  listingIds?: string[]
 ) {
   const session = await requireRole(actorRole);
-  return bulkUpdatePricing(batchId, session.user.id, adjustment, { bypassOwnership: actorRole === "admin" });
+  return bulkUpdatePricing(batchId, session.user.id, adjustment, { bypassOwnership: actorRole === "admin" }, listingIds);
 }
 
 // AE/Admin's own read of a listing to edit — same authorization as

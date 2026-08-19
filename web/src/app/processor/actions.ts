@@ -7,6 +7,6 @@ export async function bulkAddPhotosAction(batchId: string, assignments: { listin
   return handleBulkAddPhotos("processor", batchId, assignments);
 }
 
-export async function bulkUpdatePricingAction(batchId: string, adjustment: PriceAdjustment) {
-  return handleBulkUpdatePricing("processor", batchId, adjustment);
+export async function bulkUpdatePricingAction(batchId: string, adjustment: PriceAdjustment, listingIds?: string[]) {
+  return handleBulkUpdatePricing("processor", batchId, adjustment, listingIds);
 }

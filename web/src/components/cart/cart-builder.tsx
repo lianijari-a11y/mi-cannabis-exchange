@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Leaf, Minus, Plus, X } from "lucide-react";
+import { ChevronDown, ChevronUp, Leaf, Minus, Plus, X } from "lucide-react";
 import Link from "next/link";
 import { CATEGORY_LABELS, TERMS, TERMS_LABELS, type Category, type Terms } from "@/lib/constants";
 import { submitPublicCartOrder } from "@/lib/public-cart-actions";
@@ -72,6 +72,14 @@ export function CartBuilder({
   const [declined, setDeclined] = useState(false);
   const [submitting, setSubmitting] = useState<"accept" | "counter" | null>(null);
   const [lightbox, setLightbox] = useState<{ url: string; type: string; alt: string } | null>(null);
+  // "The bottom half has a small window that says the total price, number
+  // of products, payment terms, create retailer, etc — would be nice if a
+  // person wanted to minimize this window some downward to better see the
+  // menu." Collapses everything below the total/product-count summary row,
+  // which stays sticky-visible on its own — the menu above gets the rest
+  // of the screen. Starts expanded so the buttons are never hidden by
+  // default; a visitor scrolling a long menu can shrink it down themselves.
+  const [panelMinimized, setPanelMinimized] = useState(false);
   // Buttons are always visible up front (the human's own spec) — clicking
   // Accept/Counter while not signed in as a retailer opens the
   // license-first inline auth flow instead of submitting immediately;
@@ -355,85 +363,102 @@ export function CartBuilder({
       ))}
 
       <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-4 sticky bottom-4">
-        <div className="flex items-center justify-between mb-3">
+        <button
+          type="button"
+          onClick={() => setPanelMinimized((m) => !m)}
+          className="w-full flex items-center justify-between gap-2 mb-3"
+          aria-expanded={!panelMinimized}
+          aria-label={panelMinimized ? "Expand order panel" : "Minimize order panel"}
+        >
           <span className="text-sm text-gray-500 dark:text-gray-400">
             {items.length} product{items.length === 1 ? "" : "s"} selected
           </span>
-          <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-            ${total.toFixed(2)}
+          <span className="flex items-center gap-2">
+            <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+              ${total.toFixed(2)}
+            </span>
+            {panelMinimized ? (
+              <ChevronUp className="w-4 h-4 text-gray-400" />
+            ) : (
+              <ChevronDown className="w-4 h-4 text-gray-400" />
+            )}
           </span>
-        </div>
+        </button>
 
-        <div className="mb-3">
-          <label className="text-xs text-gray-500 dark:text-gray-400" htmlFor="cart-terms">
-            Payment terms
-          </label>
-          <select
-            id="cart-terms"
-            value={terms}
-            onChange={(e) => setTerms(e.target.value as Terms)}
-            className="w-full border border-gray-300 dark:border-gray-700 rounded-lg px-3 py-2 text-sm mt-1 bg-transparent"
-          >
-            {TERMS.map((t) => (
-              <option key={t} value={t}>
-                {TERMS_LABELS[t]}
-              </option>
-            ))}
-          </select>
-          <p className="text-[11px] text-gray-400 mt-1">
-            Smaller orders typically require cash on delivery — a seller can agree to other terms,
-            but that&apos;s their own call to make.
-          </p>
-        </div>
+        {!panelMinimized && (
+          <>
+            <div className="mb-3">
+              <label className="text-xs text-gray-500 dark:text-gray-400" htmlFor="cart-terms">
+                Payment terms
+              </label>
+              <select
+                id="cart-terms"
+                value={terms}
+                onChange={(e) => setTerms(e.target.value as Terms)}
+                className="w-full border border-gray-300 dark:border-gray-700 rounded-lg px-3 py-2 text-sm mt-1 bg-transparent"
+              >
+                {TERMS.map((t) => (
+                  <option key={t} value={t}>
+                    {TERMS_LABELS[t]}
+                  </option>
+                ))}
+              </select>
+              <p className="text-[11px] text-gray-400 mt-1">
+                Smaller orders typically require cash on delivery — a seller can agree to other terms,
+                but that&apos;s their own call to make.
+              </p>
+            </div>
 
-        {result?.error && <p className="text-xs text-red-600 mb-2">{result.error}</p>}
+            {result?.error && <p className="text-xs text-red-600 mb-2">{result.error}</p>}
 
-        {pendingAction ? (
-          <LicenseAuthFlow onAuthenticated={handleAuthenticated} onCancel={() => setPendingAction(null)} />
-        ) : sessionRole && !isRetailer ? (
-          // Logged in as some other role entirely (grower/admin/etc) — the
-          // license-first flow below is specifically for a Retailer to
-          // sign in or create an account, which doesn't apply here.
-          <p className="text-xs text-gray-500 dark:text-gray-400">
-            This link is for Retailer accounts to place an order.
-          </p>
-        ) : (
-          // Buttons are always visible up front, whether or not anyone's
-          // signed in yet — clicking Accept/Counter is what triggers the
-          // license-first sign-in flow (acceptOffer/counterOffer above),
-          // not a separate "create an account first" landing state.
-          <div className="grid grid-cols-3 gap-2">
-            <button
-              type="button"
-              onClick={() => acceptOffer()}
-              disabled={submitting !== null}
-              className="bg-green-700 text-white rounded-lg px-3 py-2 text-sm font-medium disabled:opacity-50"
-              title="Send the seller's full menu back exactly as offered"
-            >
-              {submitting === "accept" ? "Sending…" : "Accept offer"}
-            </button>
-            <button
-              type="button"
-              onClick={() => counterOffer()}
-              disabled={items.length === 0 || submitting !== null || matchesFullOffer}
-              className="border border-green-700 text-green-700 dark:text-green-400 rounded-lg px-3 py-2 text-sm font-medium disabled:opacity-50"
-              title={
-                matchesFullOffer
-                  ? "Adjust a quantity, price tier, or terms above to counter"
-                  : "Send your adjusted quantities/terms as a counter-offer"
-              }
-            >
-              {submitting === "counter" ? "Sending…" : "Counter offer"}
-            </button>
-            <button
-              type="button"
-              onClick={() => setDeclined(true)}
-              disabled={submitting !== null}
-              className="border border-gray-300 dark:border-gray-700 text-gray-600 dark:text-gray-300 rounded-lg px-3 py-2 text-sm font-medium disabled:opacity-50"
-            >
-              Reject
-            </button>
-          </div>
+            {pendingAction ? (
+              <LicenseAuthFlow onAuthenticated={handleAuthenticated} onCancel={() => setPendingAction(null)} />
+            ) : sessionRole && !isRetailer ? (
+              // Logged in as some other role entirely (grower/admin/etc) — the
+              // license-first flow below is specifically for a Retailer to
+              // sign in or create an account, which doesn't apply here.
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                This link is for Retailer accounts to place an order.
+              </p>
+            ) : (
+              // Buttons are always visible up front, whether or not anyone's
+              // signed in yet — clicking Accept/Counter is what triggers the
+              // license-first sign-in flow (acceptOffer/counterOffer above),
+              // not a separate "create an account first" landing state.
+              <div className="grid grid-cols-3 gap-2">
+                <button
+                  type="button"
+                  onClick={() => acceptOffer()}
+                  disabled={submitting !== null}
+                  className="bg-green-700 text-white rounded-lg px-3 py-2 text-sm font-medium disabled:opacity-50"
+                  title="Send the seller's full menu back exactly as offered"
+                >
+                  {submitting === "accept" ? "Sending…" : "Accept offer"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => counterOffer()}
+                  disabled={items.length === 0 || submitting !== null || matchesFullOffer}
+                  className="border border-green-700 text-green-700 dark:text-green-400 rounded-lg px-3 py-2 text-sm font-medium disabled:opacity-50"
+                  title={
+                    matchesFullOffer
+                      ? "Adjust a quantity, price tier, or terms above to counter"
+                      : "Send your adjusted quantities/terms as a counter-offer"
+                  }
+                >
+                  {submitting === "counter" ? "Sending…" : "Counter offer"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDeclined(true)}
+                  disabled={submitting !== null}
+                  className="border border-gray-300 dark:border-gray-700 text-gray-600 dark:text-gray-300 rounded-lg px-3 py-2 text-sm font-medium disabled:opacity-50"
+                >
+                  Reject
+                </button>
+              </div>
+            )}
+          </>
         )}
       </div>
 

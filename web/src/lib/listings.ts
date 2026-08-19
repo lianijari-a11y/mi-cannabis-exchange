@@ -250,7 +250,13 @@ export async function bulkUpdatePricing(
   batchId: string,
   callerId: string,
   adjustment: PriceAdjustment,
-  opts?: { bypassOwnership?: boolean }
+  opts?: { bypassOwnership?: boolean },
+  // Optional — a 34-product menu shouldn't force an all-or-nothing price
+  // change ("i should be able to select all or select the products i want
+  // to update"). Omitted/undefined means every active listing in the menu,
+  // same as before this existed; an explicit array (even the full set,
+  // which is what "select all" sends) scopes it to just those ids.
+  listingIds?: string[]
 ): Promise<{ ok: true; updatedCount: number } | { ok: false; error: string }> {
   const listings = await prisma.listing.findMany({
     where: { batchId, status: "active" },
@@ -258,15 +264,20 @@ export async function bulkUpdatePricing(
   });
   if (listings.length === 0) return { ok: false, error: "No active listings in this menu." };
 
+  const idFilter = listingIds ? new Set(listingIds) : null;
   const eligible = listings.filter(
     (l) =>
-      opts?.bypassOwnership ||
-      l.postedById === callerId ||
-      l.createdBySalesRepId === callerId ||
-      l.postedBy.assignedSalesRepId === callerId
+      (!idFilter || idFilter.has(l.id)) &&
+      (opts?.bypassOwnership ||
+        l.postedById === callerId ||
+        l.createdBySalesRepId === callerId ||
+        l.postedBy.assignedSalesRepId === callerId)
   );
   if (eligible.length === 0) {
-    return { ok: false, error: "Not authorized for any listing in this menu." };
+    return {
+      ok: false,
+      error: idFilter ? "No selected products are eligible to update." : "Not authorized for any listing in this menu.",
+    };
   }
 
   // Target-total mode scales every price by the same factor so the new

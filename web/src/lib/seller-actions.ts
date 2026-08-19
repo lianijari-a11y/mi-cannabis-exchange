@@ -270,7 +270,12 @@ export async function handleBulkAddPhotos(
 // The seller's own side of bulk price changes — "by percentage, or
 // dollar amount," plus a target-total mode. See lib/listings.ts's
 // bulkUpdatePricing.
-export async function handleBulkUpdatePricing(role: SellerRole, batchId: string, adjustment: PriceAdjustment) {
+export async function handleBulkUpdatePricing(
+  role: SellerRole,
+  batchId: string,
+  adjustment: PriceAdjustment,
+  listingIds?: string[]
+) {
   const session = await requireRole(role);
-  return bulkUpdatePricing(batchId, session.user.id, adjustment);
+  return bulkUpdatePricing(batchId, session.user.id, adjustment, undefined, listingIds);
 }

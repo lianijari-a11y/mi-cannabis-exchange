@@ -36,7 +36,8 @@ export function DashboardMenuGroup({
   saveAction: (batchId: string, assignments: { listingId: string; url: string; contentType: string }[]) => Promise<SaveResult>;
   priceSaveAction: (
     batchId: string,
-    adjustment: { mode: "percent" | "dollar" | "targetTotal"; value: number }
+    adjustment: { mode: "percent" | "dollar" | "targetTotal"; value: number },
+    listingIds?: string[]
   ) => Promise<PriceSaveResult>;
   defaultOpen: boolean;
   children: React.ReactNode;

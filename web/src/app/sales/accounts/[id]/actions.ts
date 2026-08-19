@@ -11,6 +11,6 @@ export async function bulkAddPhotosForAccount(batchId: string, assignments: { li
   return bulkAddPhotosAsAssistant("sales_rep", batchId, assignments);
 }
 
-export async function bulkUpdatePricingForAccount(batchId: string, adjustment: PriceAdjustment) {
-  return bulkUpdatePricingAsAssistant("sales_rep", batchId, adjustment);
+export async function bulkUpdatePricingForAccount(batchId: string, adjustment: PriceAdjustment, listingIds?: string[]) {
+  return bulkUpdatePricingAsAssistant("sales_rep", batchId, adjustment, listingIds);
 }
