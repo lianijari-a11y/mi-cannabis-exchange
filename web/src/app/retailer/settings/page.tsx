@@ -1,6 +1,7 @@
 import { requireRole } from "@/lib/dal";
 import { PortalShell } from "@/components/portal-shell";
 import { MetrcSettings } from "@/components/metrc-settings";
+import { ChangePasswordPanel } from "@/components/shared/change-password-panel";
 import { prisma } from "@/lib/prisma";
 import { budtendersForRetailer } from "@/lib/staff";
 import {
@@ -220,6 +221,8 @@ export default async function RetailerSettingsPage({
             </button>
           </form>
         </div>
+
+        <ChangePasswordPanel />
       </div>
     </PortalShell>
   );

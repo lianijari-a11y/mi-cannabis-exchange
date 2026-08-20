@@ -15,6 +15,7 @@ const NAV = [
   { href: "/sales/listings/new", label: "Post for a seller" },
   { href: "/sales/earnings", label: "My earnings" },
   { href: "/sales/marketing", label: "Marketing suite" },
+  { href: "/sales/settings", label: "Settings" },
 ];
 
 // One account's full profile + comprehensive menu (CLAUDE.md §38) — every

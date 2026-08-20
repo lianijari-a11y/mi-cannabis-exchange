@@ -118,16 +118,17 @@ export async function acceptProduct(dealId: string, retailerId: string) {
   // model comment. Standing rate on the rep's own account, applied
   // automatically, snapshotted once here (a later rate change never
   // retroactively touches an already-computed commission).
+  let salesRepCommissionAmount: number | null = null;
   if (deal.thread.listing.createdBySalesRepId) {
     const rep = await prisma.user.findUnique({
       where: { id: deal.thread.listing.createdBySalesRepId },
       select: { id: true, salesRepCommissionRate: true },
     });
     if (rep && rep.salesRepCommissionRate) {
-      const amount = Math.round(dealValue * (rep.salesRepCommissionRate / 100) * 100) / 100;
+      salesRepCommissionAmount = Math.round(dealValue * (rep.salesRepCommissionRate / 100) * 100) / 100;
       updates.push(
         prisma.salesRepCommission.create({
-          data: { dealId, salesRepId: rep.id, rate: rep.salesRepCommissionRate, amount },
+          data: { dealId, salesRepId: rep.id, rate: rep.salesRepCommissionRate, amount: salesRepCommissionAmount },
         })
       );
     }
@@ -141,14 +142,30 @@ export async function acceptProduct(dealId: string, retailerId: string) {
     `The retailer accepted delivery of ${deal.thread.listing.strainName} — this deal is now final.`,
     undefined
   );
-  await notify(
-    deal.commission?.setByBrokerId ?? deal.sellerId,
-    "product_accepted",
-    `Delivery accepted on ${deal.thread.listing.strainName}${
-      deal.commission ? ` — commission of $${deal.commission.rate}% now owed.` : "."
-    }`,
-    undefined
-  );
+  // Real bug found in an audit, fixed here: this used to fall back to
+  // deal.sellerId when no commission existed, sending the seller a second,
+  // nearly-identical "product_accepted" notification for no reason — the
+  // fallback was meant to cover "no broker to tell," not "tell the seller
+  // twice." Only fires when a broker actually set commission on this deal.
+  if (deal.commission) {
+    await notify(
+      deal.commission.setByBrokerId,
+      "product_accepted",
+      `Delivery accepted on ${deal.thread.listing.strainName} — commission of ${deal.commission.rate}% now owed.`,
+      undefined
+    );
+  }
+  // The Account Executive whose listing this deal came from is owed a
+  // SalesRepCommission the moment it was just computed above (if their
+  // standing rate was set) — previously never told at all.
+  if (deal.thread.listing.createdBySalesRepId && salesRepCommissionAmount !== null) {
+    await notify(
+      deal.thread.listing.createdBySalesRepId,
+      "sales_rep_commission_earned",
+      `Delivery accepted on ${deal.thread.listing.strainName} — $${salesRepCommissionAmount} commission earned.`,
+      undefined
+    );
+  }
 }
 
 // Added 2026-08-16 — rejecting now opens a resolution flow instead of just

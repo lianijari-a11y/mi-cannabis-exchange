@@ -31,13 +31,66 @@ export async function resetUserPassword(
   }
 
   const passwordHash = await bcrypt.hash(newPassword, 10);
-  // Someone else chose this password on the account holder's behalf —
-  // same signal createRetailerAccountForAdmin sets at creation, checked
-  // by the license-first inline sign-in flow on a public menu/collection
-  // link (components/cart/license-auth-flow.tsx) to prompt a retailer for
-  // a real password instead of the one just reset for them.
+  // Someone else chose this password on the account holder's behalf — the
+  // signal that forces a real change at next sign-in for EVERY role now
+  // (lib/dal.ts's requireRole/requirePosAccess/requireAuth check this live
+  // on every request, not just the retailer-only license-first cart flow
+  // this flag originally existed for).
   await prisma.user.update({
     where: { id: targetUserId },
     data: { passwordHash, mustChangePassword: true },
   });
+}
+
+// Live per-request check — deliberately a DB read, not trusted from the
+// JWT/session, so it reflects an Admin/AE resetting someone's password
+// even if that person still has an existing, unexpired session open
+// elsewhere (this app uses stateless JWT sessions with no server-side
+// session store to actually revoke, so this is the one piece of "force a
+// real re-auth after a reset" this app can do without a bigger session
+// architecture change — see CLAUDE.md's own audit note on that tradeoff).
+export async function userMustChangePassword(userId: string): Promise<boolean> {
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { mustChangePassword: true } });
+  return user?.mustChangePassword ?? false;
+}
+
+// The forced-change gate (/account/change-password) — no "current
+// password" prompt, since the whole point is the account holder was
+// handed a temporary one nobody expects them to type twice.
+export async function setPasswordAfterForcedChange(userId: string, newPassword: string): Promise<void> {
+  if (newPassword.length < 8) {
+    throw new Error("New password must be at least 8 characters.");
+  }
+  const passwordHash = await bcrypt.hash(newPassword, 10);
+  await prisma.user.update({
+    where: { id: userId },
+    data: { passwordHash, mustChangePassword: false },
+  });
+}
+
+// Real self-service password change from a settings page — the one path
+// that was completely missing before this: every other way a password
+// changes in this app involves an Admin/AE or a forgot-password token.
+// Requires the current password, same as any normal "change password"
+// control elsewhere on the web.
+export async function changeOwnPassword(
+  userId: string,
+  currentPassword: string,
+  newPassword: string
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (newPassword.length < 8) {
+    return { ok: false, error: "New password must be at least 8 characters." };
+  }
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) return { ok: false, error: "Account not found." };
+
+  const valid = await bcrypt.compare(currentPassword, user.passwordHash);
+  if (!valid) return { ok: false, error: "Current password is incorrect." };
+
+  const passwordHash = await bcrypt.hash(newPassword, 10);
+  await prisma.user.update({
+    where: { id: userId },
+    data: { passwordHash, mustChangePassword: false },
+  });
+  return { ok: true };
 }

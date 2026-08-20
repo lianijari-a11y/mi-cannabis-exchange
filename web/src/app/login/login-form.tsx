@@ -2,6 +2,7 @@
 
 import { useActionState } from "react";
 import { useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { login } from "./actions";
 
 export function LoginForm() {
@@ -26,9 +27,14 @@ export function LoginForm() {
         />
       </div>
       <div>
-        <label className="text-xs text-gray-500 dark:text-gray-400" htmlFor="password">
-          Password
-        </label>
+        <div className="flex items-center justify-between">
+          <label className="text-xs text-gray-500 dark:text-gray-400" htmlFor="password">
+            Password
+          </label>
+          <Link href="/forgot-password" className="text-xs text-green-700 dark:text-green-400">
+            Forgot password?
+          </Link>
+        </div>
         <input
           id="password"
           name="password"

@@ -2,6 +2,7 @@ import { requireRole } from "@/lib/dal";
 import { PortalShell } from "@/components/portal-shell";
 import { PosSettings } from "@/components/seller/pos-settings";
 import { MetrcSettings } from "@/components/metrc-settings";
+import { ChangePasswordPanel } from "@/components/shared/change-password-panel";
 import { connectPosAction, disconnectPosAction, connectMetrcAction, disconnectMetrcAction } from "./actions";
 
 const NAV = [
@@ -20,6 +21,7 @@ export default async function GrowerSettingsPage() {
       <div className="space-y-4">
         <MetrcSettings userId={session.user.id} connectAction={connectMetrcAction} disconnectAction={disconnectMetrcAction} />
         <PosSettings sellerId={session.user.id} connectAction={connectPosAction} disconnectAction={disconnectPosAction} />
+        <ChangePasswordPanel />
       </div>
     </PortalShell>
   );

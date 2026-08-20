@@ -163,6 +163,10 @@ export async function createAssistedSellerAccount(formData: FormData): Promise<C
       // creates it is immediately the assigned rep (CLAUDE.md §38). Admin
       // creating one leaves it unclaimed; Admin isn't a rep in this model.
       assignedSalesRepId: session.user.role === "sales_rep" ? session.user.id : null,
+      // The AE/Admin building this typed in the password, not the grower —
+      // same "must set a real one before it means anything" signal every
+      // other assisted-account-creation path in this app now sets.
+      mustChangePassword: true,
     },
   });
 

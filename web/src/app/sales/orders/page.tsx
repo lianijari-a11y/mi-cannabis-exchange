@@ -11,6 +11,7 @@ const NAV = [
   { href: "/sales/listings/new", label: "Post for a seller" },
   { href: "/sales/earnings", label: "My earnings" },
   { href: "/sales/marketing", label: "Marketing suite" },
+  { href: "/sales/settings", label: "Settings" },
 ];
 
 // Cart orders (CLAUDE.md §41) touching this rep's own assigned accounts —

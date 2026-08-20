@@ -150,6 +150,22 @@ export async function addOfferRound(params: {
     params.actorRole === "seller" ? thread.retailerId : thread.listing.postedById;
   const actorLabel = params.actorRole === "seller" ? "The seller" : "The retailer";
 
+  // The Account Executive who built this listing isn't a party to the
+  // negotiation and never sees the anonymized in-progress back-and-forth
+  // (they only get real identity once a Deal exists, via
+  // threadsForSalesRep) — but they connected the parties, so "did my
+  // listing get countered/rejected/accepted" is worth telling them on
+  // every outcome, not just a closed non-cash deal. Previously only the
+  // accept+non-cash case notified the AE at all; a plain cash accept, any
+  // counter, and any reject were all silent to them.
+  const assignedRepId = thread.listing.createdBySalesRepId;
+  const threadId = thread.id;
+  async function notifyAssignedRep(type: string, message: string) {
+    if (assignedRepId) {
+      await notify(assignedRepId, type, message, threadId);
+    }
+  }
+
   if (params.action === "reject") {
     await prisma.offerThread.update({
       where: { id: thread.id },
@@ -161,6 +177,10 @@ export async function addOfferRound(params: {
       `${actorLabel} rejected the negotiation on ${thread.listing.strainName}.`,
       thread.id
     );
+    await notifyAssignedRep(
+      "offer_rejected",
+      `${actorLabel} rejected the negotiation on ${thread.listing.strainName}.`
+    );
   } else if (params.action === "counter") {
     await notify(
       otherPartyId,
@@ -169,6 +189,12 @@ export async function addOfferRound(params: {
         params.price != null ? ` — $${params.price}` : ""
       }.`,
       thread.id
+    );
+    await notifyAssignedRep(
+      "offer_countered",
+      `${actorLabel} sent a counter-offer on ${thread.listing.strainName}${
+        params.price != null ? ` — $${params.price}` : ""
+      }.`
     );
   } else if (params.action === "accept") {
     // Terms of the deal are whatever was most recently on the table — the
@@ -236,14 +262,20 @@ export async function addOfferRound(params: {
 
     // The Account Executive who built this listing isn't a party to the
     // deal and bears no responsibility for whatever terms the grower
-    // agreed to (CLAUDE.md §40's disclaimer) — but they likely still want
-    // to know a non-default (non-cash) deal closed on a listing they
-    // relayed, since they're the one who originally connected the parties.
-    if (finalTerms !== "cash" && thread.listing.createdBySalesRepId) {
+    // agreed to (CLAUDE.md §40's disclaimer) — but they're the one who
+    // connected the parties, so every closed deal is worth telling them
+    // about, not just the non-cash ones. Non-cash terms still get their
+    // own more pointed message (the original reason this existed at all —
+    // "did the grower agree to something riskier than cash"); a plain
+    // cash-terms accept gets a lighter, still-real notification instead
+    // of the previous silence.
+    if (thread.listing.createdBySalesRepId) {
       await notify(
         thread.listing.createdBySalesRepId,
-        "cart_terms_approved",
-        `A deal on ${thread.listing.strainName} closed with "${finalTerms}" terms instead of cash — the grower approved this themselves.`,
+        finalTerms !== "cash" ? "cart_terms_approved" : "offer_accepted",
+        finalTerms !== "cash"
+          ? `A deal on ${thread.listing.strainName} closed with "${finalTerms}" terms instead of cash — the grower approved this themselves.`
+          : `A deal on ${thread.listing.strainName} closed at $${finalPrice}/${thread.listing.unit}.`,
         thread.id
       );
     }

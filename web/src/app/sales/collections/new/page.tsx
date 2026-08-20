@@ -12,6 +12,7 @@ const NAV = [
   { href: "/sales/listings/new", label: "Post for a seller" },
   { href: "/sales/earnings", label: "My earnings" },
   { href: "/sales/marketing", label: "Marketing suite" },
+  { href: "/sales/settings", label: "Settings" },
 ];
 
 // "An account rep has 14 menus from 14 different growers, all 14 can be

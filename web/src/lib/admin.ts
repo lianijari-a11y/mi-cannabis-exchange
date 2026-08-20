@@ -42,6 +42,10 @@ export async function createStaffAccount(params: {
       // in the first place instead of anyone reaching it directly.
       licenseVerification: "approved",
       phone: params.phone?.trim() || null,
+      // Admin typed this password in, not the new Broker/Sales Rep —
+      // same "must set a real one" signal every other assisted-account-
+      // creation path in this app now sets.
+      mustChangePassword: true,
     },
   });
 }

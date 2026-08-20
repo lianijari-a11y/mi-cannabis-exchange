@@ -160,10 +160,32 @@ model User {
   marketingMessages          MarketingMessage[]
   menuCollectionsCreated     MenuCollection[]
   cartOrdersPlaced           CartOrder[]
+  passwordResetTokens        PasswordResetToken[]
 
   @@index([retailerOwnerId])
   @@index([assignedSalesRepId])
   @@map("users")
+}
+
+// Self-service "forgot password" (CLAUDE.md — no email-sending infra
+// existed at all until this shipped; see lib/email.ts). A token is a
+// single-use, time-limited credential: requesting a new one doesn't
+// invalidate an older still-valid one on its own, but usedAt on any token
+// prevents a replay, and the request flow always mints a fresh row rather
+// than reusing one. Stored hashed (sha256, deterministic — a reset link
+// only needs to be looked up by exact match, not brute-force-resistant
+// bcrypt) so a raw DB read can't hand out a live reset credential.
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String   @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@map("password_reset_tokens")
 }
 
 // Records that a user clicked "I agree" on a given agreement, at a given

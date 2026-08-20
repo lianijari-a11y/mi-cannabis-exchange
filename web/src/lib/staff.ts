@@ -30,6 +30,10 @@ export async function createBudtenderAccount(
       anonHandle,
       licenseVerification: "approved",
       retailerOwnerId: retailerId,
+      // The Retailer typed this password in for their employee, not the
+      // budtender themselves — same "must set a real one" signal every
+      // other assisted-account-creation path in this app now sets.
+      mustChangePassword: true,
     },
   });
 }

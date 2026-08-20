@@ -1,6 +1,7 @@
 import { requireRole } from "@/lib/dal";
 import { PortalShell } from "@/components/portal-shell";
 import { MetrcSettings } from "@/components/metrc-settings";
+import { ChangePasswordPanel } from "@/components/shared/change-password-panel";
 import { connectMetrcAction, disconnectMetrcAction } from "./actions";
 
 const NAV = [
@@ -14,7 +15,10 @@ export default async function TransporterSettingsPage() {
   return (
     <PortalShell roleLabel="Transporter" navItems={NAV}>
       <h1 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">Settings</h1>
-      <MetrcSettings userId={session.user.id} connectAction={connectMetrcAction} disconnectAction={disconnectMetrcAction} />
+      <div className="space-y-4">
+        <MetrcSettings userId={session.user.id} connectAction={connectMetrcAction} disconnectAction={disconnectMetrcAction} />
+        <ChangePasswordPanel />
+      </div>
     </PortalShell>
   );
 }

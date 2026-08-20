@@ -15,6 +15,7 @@ const NAV = [
   { href: "/admin/metrc", label: "METRC" },
   { href: "/admin/system-health", label: "System health" },
   { href: "/admin/marketing", label: "Marketing suite" },
+  { href: "/admin/settings", label: "Settings" },
 ];
 
 const money = (n: number) => `$${n.toFixed(2)}`;

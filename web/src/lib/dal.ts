@@ -3,6 +3,19 @@ import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import type { Role } from "@/lib/constants";
 import { hasAcceptedNonCircumvent } from "@/lib/agreements";
+import { userMustChangePassword } from "@/lib/account-management";
+
+// Applies to every authenticated role, including Admin and Budtender —
+// unlike the non-circumvent gate below, there's no "not a party to this"
+// exemption for a forced password change. Checked live against the DB
+// (see userMustChangePassword's own comment for why), not trusted from
+// the session, so an Admin/AE reset takes effect on this user's very next
+// request even if they still have an older, unexpired session open.
+async function requirePasswordChangeIfNeeded(userId: string) {
+  if (await userMustChangePassword(userId)) {
+    redirect("/account/change-password");
+  }
+}
 
 // Roles that must accept the platform's non-circumvention agreement before
 // reaching their portal — every marketplace participant. Admin is the
@@ -23,6 +36,7 @@ export async function requireRole(role: Role) {
   if (!session?.user || session.user.role !== role) {
     redirect("/login");
   }
+  await requirePasswordChangeIfNeeded(session.user.id);
   if (NON_CIRCUMVENT_GATED_ROLES.includes(role) && !(await hasAcceptedNonCircumvent(session.user.id))) {
     redirect("/agreements/non-circumvent");
   }
@@ -41,6 +55,7 @@ export async function requirePosAccess() {
   if (!session?.user || (session.user.role !== "retailer" && session.user.role !== "budtender")) {
     redirect("/login");
   }
+  await requirePasswordChangeIfNeeded(session.user.id);
   if (session.user.role === "retailer" && !(await hasAcceptedNonCircumvent(session.user.id))) {
     redirect("/agreements/non-circumvent");
   }
@@ -56,5 +71,6 @@ export async function requireAuth() {
   if (!session?.user) {
     redirect("/login");
   }
+  await requirePasswordChangeIfNeeded(session.user.id);
   return session;
 }
