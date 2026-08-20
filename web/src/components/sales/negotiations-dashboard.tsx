@@ -1,3 +1,6 @@
+"use client";
+
+import { useMemo, useState } from "react";
 import { TERMS_LABELS, type Terms } from "@/lib/constants";
 
 type Thread = {
@@ -26,6 +29,23 @@ const STATUS_STYLE: Record<string, string> = {
   rejected: "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400",
 };
 
+function matches(thread: Thread, needle: string): boolean {
+  if (!needle) return true;
+  const haystack = [
+    thread.listing.strainName,
+    thread.listing.postedBy.businessName,
+    thread.listing.postedBy.fullName,
+    thread.listing.postedBy.licenseNumber,
+    thread.retailer.businessName,
+    thread.retailer.fullName,
+    thread.retailer.licenseNumber,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  return haystack.includes(needle);
+}
+
 // An Account Executive's own negotiations view (CLAUDE.md — a deliberate,
 // confirmed reversal of the blind-marketplace boundary for this role
 // specifically) — real identity on both sides, but scoped to threads on
@@ -34,19 +54,41 @@ const STATUS_STYLE: Record<string, string> = {
 // section on purpose, since it's the same underlying data just filtered
 // down — Admin's equivalent page reuses allThreadsForBroker() directly and
 // renders through this exact same component, unscoped.
+//
+// Search is a plain client-side substring filter on the already-fetched
+// list — same "no new index needed at this data volume" posture as the
+// retailer feed's own search (CLAUDE.md §18) — matching strain name,
+// either side's business/contact name, or either side's license number.
 export function NegotiationsDashboard({ threads, scopeLabel }: { threads: Thread[]; scopeLabel: string }) {
-  const open = threads.filter((t) => t.status === "open");
-  const closed = threads.filter((t) => t.status !== "open");
+  const [query, setQuery] = useState("");
+  const needle = query.trim().toLowerCase();
+
+  const filtered = useMemo(() => threads.filter((t) => matches(t, needle)), [threads, needle]);
+  const open = filtered.filter((t) => t.status === "open");
+  const closed = filtered.filter((t) => t.status !== "open");
+  const totalOpen = threads.filter((t) => t.status === "open").length;
 
   return (
     <div className="space-y-8">
       <section>
         <h1 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">Negotiations</h1>
-        <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
-          {scopeLabel} — {open.length} open.
+        <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+          {scopeLabel} — {totalOpen} open.
         </p>
 
-        {open.length === 0 && <p className="text-sm text-gray-500 dark:text-gray-400">No open negotiations.</p>}
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search strain, business name, or license number…"
+          className="w-full border border-gray-300 dark:border-gray-700 rounded-lg px-3 py-2 text-sm mb-4 bg-transparent"
+        />
+
+        {open.length === 0 && (
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            {needle ? "No open negotiations match your search." : "No open negotiations."}
+          </p>
+        )}
 
         <div className="space-y-3">
           {open.map((thread) => (
