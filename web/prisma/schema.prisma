@@ -174,6 +174,7 @@ model User {
   cartOrdersPlaced           CartOrder[]
   passwordResetTokens        PasswordResetToken[]
   assignedLeads              Lead[]
+  leadMessageCampaigns       LeadMessageCampaign[] @relation("LeadCampaignCreatedBy")
 
   @@index([retailerOwnerId])
   @@index([assignedSalesRepId])
@@ -1458,8 +1459,9 @@ model Lead {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  activity     LeadActivityLog[]
-  phoneNumbers LeadPhoneNumber[]
+  activity        LeadActivityLog[]
+  phoneNumbers    LeadPhoneNumber[]
+  campaignItems   LeadMessageCampaignItem[]
 
   @@index([listKey])
   @@index([disposition])
@@ -1514,6 +1516,70 @@ model LeadActivityLog {
 
   @@index([leadId])
   @@map("lead_activity_logs")
+}
+
+// Added 2026-08-21 — "AI text message creator": an AE/Admin writes one
+// generic template, optionally has Claude draft a personalized version per
+// selected lead (lib/lead-messaging.ts's personalizeMessagesForLeads), then
+// reviews/edits every line before anything is created here — same "drafts,
+// never auto-sends" posture as structureListingDraftsBulk. A campaign can
+// send as soon as possible (scheduledFor null) or at a specific future
+// time ("a week from now"), since this app has no background-job
+// infrastructure anywhere else — see the cron route at
+// /api/cron/send-scheduled-messages, the actual mechanism that makes a
+// future scheduledFor eventually fire.
+model LeadMessageCampaign {
+  id            String  @id @default(cuid())
+  createdByRole String // "sales_rep" | "admin"
+  createdById   String
+  createdBy     User    @relation("LeadCampaignCreatedBy", fields: [createdById], references: [id])
+
+  templateText String
+  // False when the "not configured"/error fallback sent the same literal
+  // template to everyone instead of a real per-lead personalization —
+  // surfaced in the UI so nobody mistakes an unpersonalized blast for one
+  // that actually was.
+  personalized Boolean @default(false)
+
+  // Null = send as soon as the next processing pass picks it up (still
+  // routed through the same due-campaign path as a scheduled one, not sent
+  // synchronously inline — see processDueCampaigns for why: a large
+  // campaign sending "at once" needs the same bounded-batch handling a
+  // scheduled one does, to avoid a single request timing out or hammering
+  // Vonage's own rate limits).
+  scheduledFor DateTime?
+  // scheduled | sending | sent | canceled
+  status String @default("scheduled")
+
+  createdAt  DateTime  @default(now())
+  sentAt     DateTime?
+  canceledAt DateTime?
+
+  items LeadMessageCampaignItem[]
+
+  @@index([status, scheduledFor])
+  @@map("lead_message_campaigns")
+}
+
+model LeadMessageCampaignItem {
+  id         String              @id @default(cuid())
+  campaignId String
+  campaign   LeadMessageCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  leadId     String
+  lead       Lead                @relation(fields: [leadId], references: [id])
+
+  text String // the exact, human-reviewed text for this one lead
+
+  // pending | sent | failed | skipped_blocked | skipped_dnc |
+  // skipped_claimed (another AE claimed this lead between scheduling and
+  // send time) | canceled
+  status       String  @default("pending")
+  errorMessage String?
+  sentAt       DateTime?
+
+  @@index([campaignId])
+  @@index([leadId])
+  @@map("lead_message_campaign_items")
 }
 
 // Postgres-backed replacement for the in-memory per-IP sliding-window

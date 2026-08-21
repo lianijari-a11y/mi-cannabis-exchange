@@ -48,11 +48,20 @@ export default async function AdminMarketingPage({
 
   return (
     <PortalShell roleLabel="Admin" navItems={NAV}>
-      <h1 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">Marketing suite</h1>
+      <div className="flex items-center justify-between mb-1">
+        <h1 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Marketing suite</h1>
+        <a
+          href="/admin/marketing/campaigns"
+          className="text-xs rounded-lg bg-green-700 text-white px-3 py-1.5 shrink-0"
+        >
+          Message campaigns →
+        </a>
+      </div>
       <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
         Cold-calling lead lists shared with the sales team — call logging, disposition tracking,
         notes, texting, the Power Dialer, callback calendar, and dashboard (buttons below the
-        list).
+        list). Message campaigns lets you AI-personalize and send (or schedule) a text to many
+        leads at once.
       </p>
 
       <div className="flex gap-2 mb-4 flex-wrap">
