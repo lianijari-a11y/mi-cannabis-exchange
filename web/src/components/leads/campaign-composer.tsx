@@ -218,6 +218,12 @@ export function CampaignComposer({
             />
             Send as soon as possible
           </label>
+          {scheduleMode === "now" && (
+            <p className="pl-6 text-[10px] text-gray-500 dark:text-gray-400">
+              Most sends go out right away. A very large batch may finish over the next day via the same
+              once-daily check that handles scheduled sends.
+            </p>
+          )}
           <label className="flex items-center gap-2 text-xs">
             <input
               type="radio"
@@ -253,8 +259,9 @@ export function CampaignComposer({
                 ))}
               </div>
               <p className="text-[10px] text-gray-500 dark:text-gray-400">
-                Scheduled sends are picked up on an hourly check — exact minute isn't guaranteed, but the date/time
-                you set is honored to within about an hour.
+                Scheduled sends are picked up on a once-daily check — exact time isn't guaranteed, but the date
+                you set is honored to within about a day. Great for "a week from now," less precise for "in 2
+                hours."
               </p>
             </div>
           )}
