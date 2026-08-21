@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { shipmentForTransporter } from "@/lib/shipments";
+import { LocationSharingToggle } from "@/components/transporter/location-sharing-toggle";
 import {
   NEXT_SHIPMENT_STATUS,
   SHIPMENT_STATUS_LABELS,
@@ -55,6 +56,9 @@ export async function TransporterShipmentDetail({
   transportFeeAction,
   transportInvoiceAction,
   confirmTransportFeePaidAction,
+  driverInfoAction,
+  toggleLocationSharingAction,
+  reportLocationAction,
   error,
 }: {
   shipmentId: string;
@@ -64,6 +68,9 @@ export async function TransporterShipmentDetail({
   transportFeeAction: (formData: FormData) => void;
   transportInvoiceAction: (formData: FormData) => void;
   confirmTransportFeePaidAction: (formData: FormData) => void;
+  driverInfoAction: (formData: FormData) => void;
+  toggleLocationSharingAction: (formData: FormData) => void;
+  reportLocationAction: (shipmentId: string, lat: number, lng: number) => Promise<{ ok: boolean; error?: string }>;
   error?: string;
 }) {
   const shipment = await shipmentForTransporter(shipmentId, transporterId);
@@ -120,6 +127,49 @@ export async function TransporterShipmentDetail({
       </div>
 
       {error && <p className="text-xs text-red-600">{error}</p>}
+
+      <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-4 space-y-3">
+        <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Driver</h2>
+        <p className="text-xs text-gray-500 dark:text-gray-400">
+          Who's actually hauling this load — the grower and retailer will see this once it's set.
+        </p>
+        <form action={driverInfoAction} className="flex flex-wrap gap-2 items-end">
+          <input type="hidden" name="shipmentId" value={shipment.id} />
+          <div>
+            <label className="text-[10px] text-gray-400 block">Driver name</label>
+            <input
+              name="driverName"
+              defaultValue={shipment.driverName ?? ""}
+              className="border border-gray-300 dark:border-gray-700 rounded-lg px-2 py-1.5 text-xs bg-transparent w-40"
+            />
+          </div>
+          <div>
+            <label className="text-[10px] text-gray-400 block">Driver phone</label>
+            <input
+              name="driverPhone"
+              defaultValue={shipment.driverPhone ?? ""}
+              className="border border-gray-300 dark:border-gray-700 rounded-lg px-2 py-1.5 text-xs bg-transparent w-32"
+            />
+          </div>
+          <button
+            type="submit"
+            className="border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 rounded-lg px-3 py-1.5 text-xs font-medium"
+          >
+            Save
+          </button>
+        </form>
+
+        {(shipment.status === "picked_up" || shipment.status === "in_transit") && (
+          <div className="pt-2 border-t border-gray-100 dark:border-gray-800">
+            <LocationSharingToggle
+              shipmentId={shipment.id}
+              enabled={shipment.locationSharingEnabled}
+              toggleAction={toggleLocationSharingAction}
+              reportLocationAction={reportLocationAction}
+            />
+          </div>
+        )}
+      </div>
 
       <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-4 space-y-3">
         <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">

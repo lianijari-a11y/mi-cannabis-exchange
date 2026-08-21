@@ -12,6 +12,11 @@ import {
   restoreLeadAction,
   lookupContactAction,
   applyContactInfoAction,
+  sendTextAction,
+  addPhoneNumberAction,
+  updatePhoneNumberAction,
+  removePhoneNumberAction,
+  setPhoneNumberPositionAction,
 } from "./actions";
 
 const NAV = [
@@ -29,19 +34,20 @@ export default async function SalesMarketingPage({
 }: {
   searchParams: Promise<{ list?: string }>;
 }) {
-  await requireRole("sales_rep");
+  const session = await requireRole("sales_rep");
   const { list } = await searchParams;
   const listKey: LeadListKey = LEAD_LIST_KEYS.includes(list as LeadListKey) ? (list as LeadListKey) : "leads";
 
-  const [leads, counts] = await Promise.all([leadsForList(listKey), leadCountsByList()]);
+  const actor = { role: "sales_rep" as const, id: session.user.id };
+  const [leads, counts] = await Promise.all([leadsForList(listKey, false, actor), leadCountsByList(actor)]);
 
   return (
     <PortalShell roleLabel="Account Executive" navItems={NAV}>
       <h1 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">Marketing suite</h1>
       <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
-        Cold-calling lead lists for soliciting inventory from growers/processors — core CRM only
-        for now (call logging, disposition tracking, notes). Power Dialer, callback calendar, and
-        dashboard are a planned follow-up.
+        Cold-calling lead lists for soliciting inventory from growers/processors — call logging,
+        disposition tracking, notes, texting, the Power Dialer, callback calendar, and dashboard
+        (buttons below the list).
       </p>
 
       <div className="flex gap-2 mb-4 flex-wrap">
@@ -73,6 +79,11 @@ export default async function SalesMarketingPage({
           restoreLeadAction,
           lookupContactAction,
           applyContactInfoAction,
+          sendTextAction,
+          addPhoneNumberAction,
+          updatePhoneNumberAction,
+          removePhoneNumberAction,
+          setPhoneNumberPositionAction,
         }}
       />
     </PortalShell>

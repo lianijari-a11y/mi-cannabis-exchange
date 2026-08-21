@@ -1,11 +1,13 @@
 "use server";
 
 import bcrypt from "bcryptjs";
+import { after } from "next/server";
 import { AuthError } from "next-auth";
 import { signIn } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { generateAnonHandle } from "@/lib/anon-handle";
 import { lookupLicense } from "@/lib/license-registry";
+import { geocodeAddress } from "@/lib/geocoding";
 import { ROLES, LICENSED_ROLES, ADDRESS_ROLES, roleHome, type Role } from "@/lib/constants";
 import { safeRedirect } from "@/lib/safe-redirect";
 
@@ -107,7 +109,7 @@ export async function signup(_prevState: SignupState, formData: FormData): Promi
   const passwordHash = await bcrypt.hash(password, 10);
   const anonHandle = await generateAnonHandle(role);
 
-  await prisma.user.create({
+  const created = await prisma.user.create({
     data: {
       role,
       email,
@@ -127,6 +129,22 @@ export async function signup(_prevState: SignupState, formData: FormData): Promi
       zip,
     },
   });
+
+  // Off the signup critical path, same posture as METRC submission in
+  // lib/pos.ts — a slow or failed geocode should never delay or break
+  // account creation. No-ops entirely (geocodeAddress returns null) when
+  // GOOGLE_MAPS_API_KEY isn't set.
+  if (address) {
+    after(async () => {
+      const geocoded = await geocodeAddress(address, city, state, zip);
+      if (geocoded) {
+        await prisma.user.update({
+          where: { id: created.id },
+          data: { addressLat: geocoded.lat, addressLng: geocoded.lng, geocodedAt: new Date() },
+        });
+      }
+    });
+  }
 
   // A retailer signing up from a shared listing link (CLAUDE.md §36) needs
   // to land back on that listing to complete the action they clicked, not

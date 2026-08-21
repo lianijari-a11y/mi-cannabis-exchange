@@ -7,6 +7,9 @@ import {
   submitTransportFee,
   submitTransportInvoice,
   confirmTransportFeePaid,
+  submitDriverInfo,
+  toggleLocationSharing,
+  reportLocationAction,
 } from "./actions";
 
 const NAV = [
@@ -35,6 +38,9 @@ export default async function TransporterShipmentPage({
         transportFeeAction={submitTransportFee}
         transportInvoiceAction={submitTransportInvoice}
         confirmTransportFeePaidAction={confirmTransportFeePaid}
+        driverInfoAction={submitDriverInfo}
+        toggleLocationSharingAction={toggleLocationSharing}
+        reportLocationAction={reportLocationAction}
         error={error}
       />
     </PortalShell>

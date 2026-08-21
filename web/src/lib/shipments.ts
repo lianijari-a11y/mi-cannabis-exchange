@@ -230,6 +230,72 @@ export async function setDeliveryInstructions(shipmentId: string, retailerId: st
   });
 }
 
+// Added 2026-08-20 — who's actually driving this load. Previously the app
+// only ever recorded which Transporter *company* account was assigned, not
+// an individual person — a grower/retailer asking "who's driving my
+// shipment" had no answer beyond the carrier's business name. Free text,
+// set by the transporter, same "re-setting just overwrites" posture as
+// pickup/delivery instructions above.
+export async function setDriverInfo(
+  shipmentId: string,
+  transporterId: string,
+  driverName: string,
+  driverPhone: string
+) {
+  const shipment = await prisma.shipment.findUnique({ where: { id: shipmentId } });
+  if (!shipment || shipment.transporterId !== transporterId) {
+    throw new Error("Not authorized for this shipment.");
+  }
+  await prisma.shipment.update({
+    where: { id: shipmentId },
+    data: { driverName: driverName.trim() || null, driverPhone: driverPhone.trim() || null },
+  });
+}
+
+// Added 2026-08-20 — opt-in live location while a shipment is genuinely in
+// transit. Deliberately NOT a third-party fleet-tracking service — the
+// driver's own device (already logged into /transporter on a phone,
+// already a PWA) reports its position via the browser's own Geolocation
+// API, opt-in, and only while this flag is on. Turning it off — whether
+// the driver does it manually or advanceShipmentStatus does it
+// automatically at "delivered" below — clears the last-known point
+// immediately rather than leaving a stale position visible after tracking
+// has genuinely stopped.
+export async function setLocationSharing(shipmentId: string, transporterId: string, enabled: boolean) {
+  const shipment = await prisma.shipment.findUnique({ where: { id: shipmentId } });
+  if (!shipment || shipment.transporterId !== transporterId) {
+    throw new Error("Not authorized for this shipment.");
+  }
+  await prisma.shipment.update({
+    where: { id: shipmentId },
+    data: enabled
+      ? { locationSharingEnabled: true }
+      : { locationSharingEnabled: false, lastLat: null, lastLng: null, lastLocationAt: null },
+  });
+}
+
+// Called periodically by the driver's own browser while sharing is on
+// (see components/transporter/location-sharing-toggle.tsx). Silently
+// no-ops if sharing has since been turned off — a position report that
+// was already in flight when the driver disabled sharing shouldn't
+// resurrect a point that was just intentionally cleared.
+export async function reportShipmentLocation(
+  shipmentId: string,
+  transporterId: string,
+  lat: number,
+  lng: number
+) {
+  const shipment = await prisma.shipment.findUnique({ where: { id: shipmentId } });
+  if (!shipment || shipment.transporterId !== transporterId) {
+    throw new Error("Not authorized for this shipment.");
+  }
+  if (!shipment.locationSharingEnabled) return;
+  await prisma.shipment.update({
+    where: { id: shipmentId },
+    data: { lastLat: lat, lastLng: lng, lastLocationAt: new Date() },
+  });
+}
+
 // Added 2026-08-16 — the transporter's own fee for hauling this load,
 // separate from the deal's price and the broker's commission (§11). The
 // transporter sets amount + who pays (grower/retailer/split) once; editing
@@ -267,19 +333,31 @@ export async function setTransportFee(
 }
 
 export async function uploadTransportInvoice(shipmentId: string, transporterId: string, file: File) {
-  const shipment = await prisma.shipment.findUnique({ where: { id: shipmentId } });
+  const shipment = await prisma.shipment.findUnique({
+    where: { id: shipmentId },
+    include: { deal: { include: { thread: { include: { listing: true } } } } },
+  });
   if (!shipment || shipment.transporterId !== transporterId) {
     throw new Error("Not authorized for this shipment.");
   }
   const url = await saveDocumentFile(`shipment-${shipmentId}-transport-invoice`, file);
   await prisma.shipment.update({ where: { id: shipmentId }, data: { transportInvoiceUrl: url } });
+
+  const strain = shipment.deal.thread.listing.strainName;
+  const message = `The transporter uploaded their invoice for ${strain}'s transport fee.`;
+  const payer = shipment.transportFeePayer;
+  if (payer === "grower" || payer === "split") await notify(shipment.deal.sellerId, "transport_invoice_uploaded", message, shipment.deal.threadId);
+  if (payer === "retailer" || payer === "split") await notify(shipment.deal.retailerId, "transport_invoice_uploaded", message, shipment.deal.threadId);
 }
 
 // The transporter confirms they were actually paid — they're the party
 // owed the money, so they're the most realistic source of "yes, this
 // settled." Admin can also mark it, same oversight fallback as Commission.
 export async function markTransportFeePaid(shipmentId: string, actorId: string, actorRole: string) {
-  const shipment = await prisma.shipment.findUnique({ where: { id: shipmentId } });
+  const shipment = await prisma.shipment.findUnique({
+    where: { id: shipmentId },
+    include: { deal: { include: { thread: { include: { listing: true } } } } },
+  });
   if (!shipment) throw new Error("Shipment not found.");
   if (actorRole !== "admin" && !(actorRole === "transporter" && shipment.transporterId === actorId)) {
     throw new Error("Only the assigned transporter or an admin can mark this paid.");
@@ -289,6 +367,12 @@ export async function markTransportFeePaid(shipmentId: string, actorId: string, 
     where: { id: shipmentId },
     data: { transportFeeStatus: "paid", transportFeePaidAt: new Date() },
   });
+
+  const strain = shipment.deal.thread.listing.strainName;
+  const message = `The $${shipment.transportFeeAmount} transport fee for ${strain} was marked paid.`;
+  const payer = shipment.transportFeePayer;
+  if (payer === "grower" || payer === "split") await notify(shipment.deal.sellerId, "transport_fee_paid", message, shipment.deal.threadId);
+  if (payer === "retailer" || payer === "split") await notify(shipment.deal.retailerId, "transport_fee_paid", message, shipment.deal.threadId);
 }
 
 // One step at a time, no skipping ahead — see NEXT_SHIPMENT_STATUS.
@@ -334,7 +418,17 @@ export async function advanceShipmentStatus(
   await prisma.$transaction([
     prisma.shipment.update({
       where: { id: shipmentId },
-      data: { status: next, ...(podUrl ? { podUrl } : {}) },
+      data: {
+        status: next,
+        ...(podUrl ? { podUrl } : {}),
+        // Live location tracking is opt-in and scoped to "this load is
+        // actively moving" — once delivered, there's nothing left to
+        // track, so this clears the same way setLocationSharing(false)
+        // does rather than leaving a stale final point on display.
+        ...(next === "delivered"
+          ? { locationSharingEnabled: false, lastLat: null, lastLng: null, lastLocationAt: null }
+          : {}),
+      },
     }),
     prisma.shipmentEvent.create({
       data: { shipmentId, status: next, note: note || null },

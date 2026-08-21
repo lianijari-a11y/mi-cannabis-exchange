@@ -46,14 +46,28 @@ export function PowerDialer({
       disposition: LeadDisposition,
       saleAmount?: number | null,
       callbackDate?: Date | null
-    ) => Promise<void>;
-    logCallAction: (id: string) => Promise<void>;
+    ) => Promise<{ ok: boolean; error?: string }>;
+    logCallAction: (id: string) => Promise<{ ok: boolean; error?: string }>;
     addNoteAction: (id: string, text: string) => Promise<void>;
   };
   onClose: () => void;
 }) {
+  // A lead's dialable numbers, in order — the new multi-number list
+  // (blocked ones excluded, sorted main-first) when it has one, falling
+  // back to the legacy single `phone` field for a lead that somehow has
+  // no LeadPhoneNumber rows (shouldn't happen post-backfill, but stay
+  // safe rather than showing "no phone" for a lead that actually has one).
+  function numbersFor(l: LeadRecord): { phone: string; name: string | null }[] {
+    const fromList = (l.phoneNumbers || [])
+      .filter((p) => !p.blocked)
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+      .map((p) => ({ phone: p.phone, name: p.name }));
+    if (fromList.length > 0) return fromList;
+    return digitsOnly(l.phone).length >= 10 ? [{ phone: l.phone!, name: null }] : [];
+  }
+
   const dialable = useMemo(
-    () => leads.filter((l) => !l.deleted && digitsOnly(l.phone).length >= 10),
+    () => leads.filter((l) => !l.deleted && numbersFor(l).length > 0),
     [leads]
   );
   const countsByDisp = useMemo(() => {
@@ -66,6 +80,12 @@ export function PowerDialer({
   const [chosen, setChosen] = useState<Set<string>>(new Set(["NEW", "NO_ANSWER", "BUSY"]));
   const [queue, setQueue] = useState<LeadRecord[]>([]);
   const [index, setIndex] = useState(0);
+  // Which of the current lead's numbers we're on — "dial one number
+  // first, then the second, and so forth within the same lead before
+  // moving to the next lead." Reset to 0 every time `index` (the lead)
+  // changes, whether that's from startDialing or from handleDisposition
+  // exhausting the current lead's numbers.
+  const [phoneIndex, setPhoneIndex] = useState(0);
   const [sessionCount, setSessionCount] = useState(0);
   const [noteDraft, setNoteDraft] = useState("");
   const [busy, setBusy] = useState(false);
@@ -76,6 +96,7 @@ export function PowerDialer({
       .sort((a, b) => (a.company || "").toLowerCase().localeCompare((b.company || "").toLowerCase()));
     setQueue(q);
     setIndex(0);
+    setPhoneIndex(0);
     setSessionCount(0);
     setStage("dialing");
   }
@@ -96,16 +117,55 @@ export function PowerDialer({
       callbackDate = input.trim() ? new Date(input.trim()) : null;
     }
     setBusy(true);
+    let result: { ok: boolean; error?: string } = { ok: true };
     try {
       if (noteDraft.trim()) await actions.addNoteAction(lead.id, noteDraft.trim());
-      await actions.logCallAction(lead.id);
-      await actions.setDispositionAction(lead.id, value, saleAmount, callbackDate);
+      result = await actions.logCallAction(lead.id);
+      if (result.ok) result = await actions.setDispositionAction(lead.id, value, saleAmount, callbackDate);
     } finally {
       setBusy(false);
     }
+    if (!result.ok) {
+      // Rare race — someone else claimed this lead between when the queue
+      // was built and now. Skip it rather than silently disposition a
+      // lead that isn't this rep's to work; the dialer just moves on.
+      window.alert(result.error ?? "This lead is no longer available — skipping.");
+    }
     setSessionCount((n) => n + 1);
     setNoteDraft("");
-    setIndex((i) => i + 1);
+
+    // "Dial one number first, then the second, and so forth within the
+    // same lead before moving to the next lead." Only advance to the next
+    // LEAD once every number on the current one has had its own dial +
+    // disposition; otherwise stay on this lead and move to its next
+    // number.
+    const currentNumbers = numbersFor(lead);
+    const nextPhoneIndex = phoneIndex + 1;
+    let nextIndex = index;
+    let resolvedPhoneIndex = nextPhoneIndex;
+    if (nextPhoneIndex >= currentNumbers.length) {
+      nextIndex = index + 1;
+      resolvedPhoneIndex = 0;
+    }
+    setIndex(nextIndex);
+    setPhoneIndex(resolvedPhoneIndex);
+
+    // Auto-dial the next number (same lead) or the next lead's first
+    // number — "call one number, disposition it, the next number dials
+    // automatically." Best-effort: navigating a tel: link still counts as
+    // leaving the page in most browsers, so this only reliably fires when
+    // triggered synchronously off a real user gesture (the disposition
+    // click that got us here) — some mobile browsers silently ignore a
+    // tel: navigation that happens after an intervening await, in which
+    // case the next call target's own big call button (still rendered
+    // right below) is there to tap manually. Never breaks the flow either
+    // way.
+    const nextLead = queue[nextIndex];
+    const nextNumbers = nextLead ? numbersFor(nextLead) : [];
+    const nextHref = nextNumbers[resolvedPhoneIndex] ? telHref(nextNumbers[resolvedPhoneIndex].phone) : null;
+    if (nextHref) {
+      window.location.href = nextHref;
+    }
   }
 
   async function saveNoteOnly() {
@@ -179,7 +239,8 @@ export function PowerDialer({
       <div className={backdrop} onClick={onClose}>
         <div className={card} onClick={(e) => e.stopPropagation()}>
           <p className="text-sm text-gray-700 dark:text-gray-300 text-center py-6">
-            🎉 Done! You dispositioned {sessionCount} of {queue.length} leads this session.
+            🎉 Done! You made {sessionCount} call{sessionCount === 1 ? "" : "s"} across {queue.length} lead
+            {queue.length === 1 ? "" : "s"} this session.
           </p>
           <button className="w-full text-xs px-3 py-2 rounded-lg bg-green-700 text-white font-medium" onClick={onClose}>
             Close
@@ -190,7 +251,9 @@ export function PowerDialer({
   }
 
   const lead = queue[index];
-  const href = telHref(lead.phone);
+  const currentNumbers = numbersFor(lead);
+  const currentNumber = currentNumbers[phoneIndex] ?? currentNumbers[0] ?? null;
+  const href = telHref(currentNumber?.phone ?? null);
   const recentLog = (lead.activity || []).slice(0, 3);
 
   return (
@@ -201,16 +264,20 @@ export function PowerDialer({
           <button className="text-xs text-gray-400" onClick={onClose}>Exit</button>
         </div>
         <p className="text-[11px] text-gray-400 text-center mb-1">
-          Lead {index + 1} of {queue.length} · {sessionCount} dispositioned this session
+          Lead {index + 1} of {queue.length}
+          {currentNumbers.length > 1 ? ` · number ${phoneIndex + 1} of ${currentNumbers.length} for this lead` : ""} ·{" "}
+          {sessionCount} call{sessionCount === 1 ? "" : "s"} made this session
         </p>
         <p className="text-lg font-semibold text-gray-900 dark:text-gray-100 text-center">{lead.company || "(no company)"}</p>
-        <p className="text-xs text-gray-500 dark:text-gray-400 text-center mb-3">{lead.contact || ""}</p>
+        <p className="text-xs text-gray-500 dark:text-gray-400 text-center mb-3">
+          {currentNumber?.name || lead.contact || ""}
+        </p>
         {href ? (
           <a
             className="block text-center text-xl font-bold text-white bg-green-700 rounded-lg py-3 mb-3"
             href={href}
           >
-            📞 {fmtPhone(lead.phone)}
+            📞 {fmtPhone(currentNumber?.phone ?? null)}
           </a>
         ) : (
           <p className="text-center text-sm text-gray-400 mb-3">no phone</p>

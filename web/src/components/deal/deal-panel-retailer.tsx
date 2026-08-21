@@ -20,6 +20,12 @@ type DealShipment = {
   transportFeeStatus: string;
   transporter: { businessName: string | null; fullName: string };
   events: { id: string; status: string; note: string | null; createdAt: Date }[];
+  driverName: string | null;
+  driverPhone: string | null;
+  locationSharingEnabled: boolean;
+  lastLat: number | null;
+  lastLng: number | null;
+  lastLocationAt: Date | null;
 };
 
 function transportFeeOwed(shipment: DealShipment, side: "grower" | "retailer"): number | null {
@@ -212,6 +218,12 @@ export function DealPanelRetailer({
           status={deal.shipment.status}
           events={deal.shipment.events}
           transporterName={deal.shipment.transporter.businessName ?? deal.shipment.transporter.fullName}
+          driverName={deal.shipment.driverName}
+          driverPhone={deal.shipment.driverPhone}
+          locationSharingEnabled={deal.shipment.locationSharingEnabled}
+          lastLat={deal.shipment.lastLat}
+          lastLng={deal.shipment.lastLng}
+          lastLocationAt={deal.shipment.lastLocationAt}
         />
       )}
 

@@ -10,10 +10,15 @@ import {
   addLeadNote,
   softDeleteLead,
   restoreLead,
+  addLeadPhoneNumber,
+  updateLeadPhoneNumber,
+  removeLeadPhoneNumber,
+  setLeadPhoneNumberPosition,
   type LeadListKey,
   type LeadDisposition,
 } from "@/lib/leads";
 import { lookupLeadContactInfo, applyLeadContactInfo } from "@/lib/lead-contact-lookup";
+import { sendSmsToLead } from "@/lib/vonage-sms";
 
 const PATH = "/sales/marketing";
 
@@ -61,15 +66,27 @@ export async function setDispositionAction(
   saleAmount?: number | null,
   callbackDate?: Date | null
 ) {
-  await requireRole("sales_rep");
-  await setLeadDisposition(id, disposition, saleAmount, callbackDate);
+  const session = await requireRole("sales_rep");
+  try {
+    await setLeadDisposition(id, disposition, saleAmount, callbackDate, { role: "sales_rep", id: session.user.id });
+  } catch (err) {
+    revalidatePath(PATH);
+    return { ok: false as const, error: err instanceof Error ? err.message : "Something went wrong." };
+  }
   revalidatePath(PATH);
+  return { ok: true as const };
 }
 
 export async function logCallAction(id: string) {
-  await requireRole("sales_rep");
-  await logLeadCall(id);
+  const session = await requireRole("sales_rep");
+  try {
+    await logLeadCall(id, { role: "sales_rep", id: session.user.id });
+  } catch (err) {
+    revalidatePath(PATH);
+    return { ok: false as const, error: err instanceof Error ? err.message : "Something went wrong." };
+  }
   revalidatePath(PATH);
+  return { ok: true as const };
 }
 
 export async function addNoteAction(id: string, text: string) {
@@ -87,5 +104,36 @@ export async function deleteLeadAction(id: string) {
 export async function restoreLeadAction(id: string) {
   await requireRole("sales_rep");
   await restoreLead(id);
+  revalidatePath(PATH);
+}
+
+export async function sendTextAction(id: string, text: string) {
+  const session = await requireRole("sales_rep");
+  const result = await sendSmsToLead(id, text, session.user.id, { role: "sales_rep", id: session.user.id });
+  revalidatePath(PATH);
+  return result;
+}
+
+export async function addPhoneNumberAction(leadId: string, phone: string, name: string) {
+  await requireRole("sales_rep");
+  await addLeadPhoneNumber(leadId, phone, name);
+  revalidatePath(PATH);
+}
+
+export async function updatePhoneNumberAction(id: string, phone: string, name: string) {
+  await requireRole("sales_rep");
+  await updateLeadPhoneNumber(id, phone, name);
+  revalidatePath(PATH);
+}
+
+export async function removePhoneNumberAction(id: string) {
+  await requireRole("sales_rep");
+  await removeLeadPhoneNumber(id);
+  revalidatePath(PATH);
+}
+
+export async function setPhoneNumberPositionAction(leadId: string, phoneNumberId: string, position: 0 | 1) {
+  await requireRole("sales_rep");
+  await setLeadPhoneNumberPosition(leadId, phoneNumberId, position);
   revalidatePath(PATH);
 }

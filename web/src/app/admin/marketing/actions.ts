@@ -10,10 +10,15 @@ import {
   addLeadNote,
   softDeleteLead,
   restoreLead,
+  addLeadPhoneNumber,
+  updateLeadPhoneNumber,
+  removeLeadPhoneNumber,
+  setLeadPhoneNumberPosition,
   type LeadListKey,
   type LeadDisposition,
 } from "@/lib/leads";
 import { lookupLeadContactInfo, applyLeadContactInfo } from "@/lib/lead-contact-lookup";
+import { sendSmsToLead } from "@/lib/vonage-sms";
 
 const PATH = "/admin/marketing";
 
@@ -61,15 +66,17 @@ export async function setDispositionAction(
   saleAmount?: number | null,
   callbackDate?: Date | null
 ) {
-  await requireRole("admin");
-  await setLeadDisposition(id, disposition, saleAmount, callbackDate);
+  const session = await requireRole("admin");
+  await setLeadDisposition(id, disposition, saleAmount, callbackDate, { role: "admin", id: session.user.id });
   revalidatePath(PATH);
+  return { ok: true as const };
 }
 
 export async function logCallAction(id: string) {
-  await requireRole("admin");
-  await logLeadCall(id);
+  const session = await requireRole("admin");
+  await logLeadCall(id, { role: "admin", id: session.user.id });
   revalidatePath(PATH);
+  return { ok: true as const };
 }
 
 export async function addNoteAction(id: string, text: string) {
@@ -87,5 +94,36 @@ export async function deleteLeadAction(id: string) {
 export async function restoreLeadAction(id: string) {
   await requireRole("admin");
   await restoreLead(id);
+  revalidatePath(PATH);
+}
+
+export async function sendTextAction(id: string, text: string) {
+  const session = await requireRole("admin");
+  const result = await sendSmsToLead(id, text, session.user.id, { role: "admin", id: session.user.id });
+  revalidatePath(PATH);
+  return result;
+}
+
+export async function addPhoneNumberAction(leadId: string, phone: string, name: string) {
+  await requireRole("admin");
+  await addLeadPhoneNumber(leadId, phone, name);
+  revalidatePath(PATH);
+}
+
+export async function updatePhoneNumberAction(id: string, phone: string, name: string) {
+  await requireRole("admin");
+  await updateLeadPhoneNumber(id, phone, name);
+  revalidatePath(PATH);
+}
+
+export async function removePhoneNumberAction(id: string) {
+  await requireRole("admin");
+  await removeLeadPhoneNumber(id);
+  revalidatePath(PATH);
+}
+
+export async function setPhoneNumberPositionAction(leadId: string, phoneNumberId: string, position: 0 | 1) {
+  await requireRole("admin");
+  await setLeadPhoneNumberPosition(leadId, phoneNumberId, position);
   revalidatePath(PATH);
 }

@@ -34,6 +34,18 @@ model User {
   state   String?
   zip     String?
 
+  // Geocoded from the free-text address above via lib/geocoding.ts
+  // (Google Geocoding API, gated behind GOOGLE_MAPS_API_KEY — same "not
+  // configured" honest-fallback posture as every other optional external
+  // API in this app). Null until a geocode attempt actually succeeds;
+  // geocodedAt lets a caller tell "never attempted" apart from "attempted
+  // and failed" isn't tracked separately — both just leave lat/lng null.
+  // Feeds real transporter routing/ETA once that's built, and a validated
+  // address is useful on its own regardless.
+  addressLat  Float?
+  addressLng  Float?
+  geocodedAt  DateTime?
+
   // License fields — grower/processor/retailer/transporter only (MI's Secure
   // Transporter license, same licensing tier as the others). Verified by
   // Admin, never auto-verified (no MI equivalent of FMCSA SAFER exists yet,
@@ -161,6 +173,7 @@ model User {
   menuCollectionsCreated     MenuCollection[]
   cartOrdersPlaced           CartOrder[]
   passwordResetTokens        PasswordResetToken[]
+  assignedLeads              Lead[]
 
   @@index([retailerOwnerId])
   @@index([assignedSalesRepId])
@@ -819,6 +832,28 @@ model Shipment {
   transportFeeStatus         String  @default("pending") // pending | paid
   transportFeePaidAt         DateTime?
 
+  // Added 2026-08-20 — who's actually driving this load. Previously the
+  // app only recorded which Transporter *company* account was assigned,
+  // never an individual driver. Free text, set by the transporter at
+  // pickup (matches how pickup/delivery instructions are already
+  // free-text, transporter-facing fields).
+  driverName  String?
+  driverPhone String?
+
+  // Added 2026-08-20 — opt-in live location while a shipment is genuinely
+  // in transit (lib/geocoding.ts's sibling, lib/tracking.ts). The driver's
+  // own device reports its position via the browser Geolocation API, not
+  // any third-party tracking service — see CLAUDE.md for why. Off by
+  // default; the driver has to explicitly turn it on, and
+  // advanceShipmentStatus clears both the flag and the last-known
+  // position the moment a shipment reaches "delivered" — this is
+  // real-time positioning, not a permanent location history, and there's
+  // no reason to keep a stale point after the load is done.
+  locationSharingEnabled Boolean   @default(false)
+  lastLat                Float?
+  lastLng                Float?
+  lastLocationAt         DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -1398,6 +1433,18 @@ model Lead {
 
   assignedRepName String? // free text, preserved from imported data — see model comment
 
+  // Added 2026-08-21 — the REAL ownership link, distinct from the free-text
+  // assignedRepName above (which never reliably matched a logged-in AE's
+  // actual account). Claimed automatically the first time any AE makes
+  // real contact with this lead (a call, a text, a disposition change) —
+  // same "claim on first contact" mechanism already used for grower/
+  // processor accounts (User.assignedSalesRepId, CLAUDE.md §38), not a
+  // new pattern invented for this. Null = unclaimed, visible to every AE;
+  // once claimed, only that AE (and Admin, always unrestricted) sees it in
+  // their own Marketing Suite / Power Dialer.
+  assignedSalesRepId String?
+  assignedSalesRep   User?   @relation(fields: [assignedSalesRepId], references: [id])
+
   // disposition: NEW | NO_PHONE | NO_ANSWER | BUSY | CALLBACK | EMAIL_SENT | SALE | DISCONNECTED | DECLINED | DNC
   disposition  String    @default("NEW")
   saleAmount   Float?
@@ -1411,11 +1458,49 @@ model Lead {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  activity LeadActivityLog[]
+  activity     LeadActivityLog[]
+  phoneNumbers LeadPhoneNumber[]
 
   @@index([listKey])
   @@index([disposition])
+  @@index([assignedSalesRepId])
   @@map("leads")
+}
+
+// Added 2026-08-21 — a business often has several real contacts (the
+// original grower, a sales rep, a second location's manager), and the
+// single `phone`/`altPhone` fields above only ever fit two, with no name
+// attached to either. Up to 5 named numbers per lead, ordered by
+// `sortOrder` (0 = main/primary, 1 = second choice, etc.) — "set as main"
+// / "set as 2nd" in the UI just reorders this list rather than being a
+// separate boolean per slot. `Lead.phone` stays in sync with whichever
+// number is at sortOrder 0 (see lib/leads.ts's setLeadPhoneNumbers) so
+// every existing phone-dependent path (search, the tel: click-to-call
+// link, Vonage texting) keeps working unchanged — they were never
+// rewritten to look here, they just keep reading the one field that's now
+// kept current.
+model LeadPhoneNumber {
+  id       String @id @default(cuid())
+  leadId   String
+  lead     Lead   @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  phone    String
+  name     String? // e.g. "Dana — sales rep", free text
+  sortOrder Int    @default(0)
+
+  // Set automatically when an inbound reply to this number says "wrong
+  // number" (this specific number is bad — the business itself may still
+  // be reachable via another one) or "stop"/"do not call" (blocks this
+  // number specifically; a STOP reply also flips the whole Lead to the
+  // DNC disposition, which is the actual platform-wide suppression — see
+  // lib/vonage-inbound.ts). sendSmsToLead refuses to text a blocked
+  // number even if a caller somehow still has it on hand.
+  blocked       Boolean @default(false)
+  blockedReason String?
+
+  createdAt DateTime @default(now())
+
+  @@index([leadId])
+  @@map("lead_phone_numbers")
 }
 
 model LeadActivityLog {

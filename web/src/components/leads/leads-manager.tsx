@@ -11,8 +11,17 @@ import { PowerDialer } from "./power-dialer";
 import { CallbackCalendar } from "./callback-calendar";
 import { LeadDashboard } from "./lead-dashboard";
 import { ContactLookupButton } from "./contact-lookup-button";
+import { LeadPhoneNumbersEditor } from "./lead-phone-numbers-editor";
 
 type LeadActivity = { id: string; text: string; createdAt: string | Date };
+export type LeadPhoneNumberRecord = {
+  id: string;
+  phone: string;
+  name: string | null;
+  sortOrder: number;
+  blocked: boolean;
+  blockedReason: string | null;
+};
 
 export type LeadRecord = {
   id: string;
@@ -41,6 +50,7 @@ export type LeadRecord = {
   lastCallAt: string | Date | null;
   deleted: boolean;
   activity: LeadActivity[];
+  phoneNumbers: LeadPhoneNumberRecord[];
 };
 
 const DISP_COLORS: Record<string, { color: string; bg: string }> = {
@@ -77,13 +87,17 @@ export function LeadsManager({
   listKey: LeadListKey;
   actions: {
     createLeadAction: (formData: FormData) => Promise<void>;
+    // Can reject with an error (e.g. "already being worked by another
+    // Account Executive" — see lib/leads.ts's claimOrVerifyLeadAssignment)
+    // now that leads have real per-AE ownership, so both return a result
+    // instead of a bare void.
     setDispositionAction: (
       id: string,
       disposition: LeadDisposition,
       saleAmount?: number | null,
       callbackDate?: Date | null
-    ) => Promise<void>;
-    logCallAction: (id: string) => Promise<void>;
+    ) => Promise<{ ok: boolean; error?: string }>;
+    logCallAction: (id: string) => Promise<{ ok: boolean; error?: string }>;
     addNoteAction: (id: string, text: string) => Promise<void>;
     deleteLeadAction: (id: string) => Promise<void>;
     restoreLeadAction: (id: string) => Promise<void>;
@@ -92,6 +106,15 @@ export function LeadsManager({
       id: string
     ) => Promise<{ ok: true; phone: string | null; email: string | null; source: string | null } | { ok: false; error: string }>;
     applyContactInfoAction?: (id: string, phone: string | null, email: string | null) => Promise<{ ok: boolean; error?: string }>;
+    // Optional — only wired in where lib/vonage-sms.ts is actually
+    // configured; pages that don't pass it just don't show the Text
+    // button, same "optional prop, gate on presence" pattern as the two
+    // contact-lookup actions above.
+    sendTextAction?: (id: string, text: string) => Promise<{ ok: true } | { ok: false; error: string }>;
+    addPhoneNumberAction: (leadId: string, phone: string, name: string) => Promise<void>;
+    updatePhoneNumberAction: (id: string, phone: string, name: string) => Promise<void>;
+    removePhoneNumberAction: (id: string) => Promise<void>;
+    setPhoneNumberPositionAction: (leadId: string, phoneNumberId: string, position: 0 | 1) => Promise<void>;
   };
 }) {
   const [search, setSearch] = useState("");
@@ -99,6 +122,10 @@ export function LeadsManager({
   const [showDeleted, setShowDeleted] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
   const [noteDraftId, setNoteDraftId] = useState<string | null>(null);
+  const [textDraftId, setTextDraftId] = useState<string | null>(null);
+  const [textError, setTextError] = useState<string | null>(null);
+  const [numbersOpenId, setNumbersOpenId] = useState<string | null>(null);
+  const [assignError, setAssignError] = useState<{ id: string; message: string } | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [overlay, setOverlay] = useState<"none" | "dialer" | "calendar" | "dashboard">("none");
@@ -127,10 +154,10 @@ export function LeadsManager({
       .sort((a, b) => a.company.localeCompare(b.company));
   }, [leads, search, dispFilter, showDeleted]);
 
-  async function withBusy(id: string, fn: () => Promise<void>) {
+  async function withBusy<T>(id: string, fn: () => Promise<T>): Promise<T> {
     setBusyId(id);
     try {
-      await fn();
+      return await fn();
     } finally {
       setBusyId(null);
     }
@@ -149,7 +176,11 @@ export function LeadsManager({
       if (input === null) return;
       callbackDate = input.trim() ? new Date(input.trim()) : null;
     }
-    await withBusy(l.id, () => actions.setDispositionAction(l.id, value as LeadDisposition, saleAmount, callbackDate));
+    setAssignError(null);
+    const result = await withBusy(l.id, () =>
+      actions.setDispositionAction(l.id, value as LeadDisposition, saleAmount, callbackDate)
+    );
+    if (!result.ok && result.error) setAssignError({ id: l.id, message: result.error });
   }
 
   return (
@@ -365,12 +396,69 @@ export function LeadsManager({
                 </form>
               )}
 
+              {textDraftId === l.id && actions.sendTextAction && (
+                <form
+                  action={async (fd) => {
+                    const text = String(fd.get("text") ?? "").trim();
+                    if (!text) return;
+                    setTextError(null);
+                    const result = await withBusy(l.id, () => actions.sendTextAction!(l.id, text));
+                    if (result && !result.ok) {
+                      setTextError(result.error);
+                      return;
+                    }
+                    setTextDraftId(null);
+                  }}
+                  className="mt-2 flex gap-2"
+                >
+                  <input
+                    name="text"
+                    autoFocus
+                    placeholder={`Text ${fmtPhone(l.phone)}…`}
+                    className="flex-1 border border-gray-300 dark:border-gray-700 rounded-lg px-2 py-1 text-xs bg-transparent"
+                  />
+                  <button type="submit" className="text-xs text-green-700 dark:text-green-400 underline">
+                    Send
+                  </button>
+                  <button type="button" onClick={() => setTextDraftId(null)} className="text-xs text-gray-400">
+                    Cancel
+                  </button>
+                </form>
+              )}
+              {textDraftId === l.id && textError && (
+                <p className="text-[11px] text-red-600 mt-1">{textError}</p>
+              )}
+
+              <button
+                type="button"
+                onClick={() => setNumbersOpenId(numbersOpenId === l.id ? null : l.id)}
+                className="text-[11px] text-gray-500 dark:text-gray-400 underline mt-1"
+              >
+                {numbersOpenId === l.id ? "Hide phone numbers" : `Phone numbers (${l.phoneNumbers.length})`}
+              </button>
+              {numbersOpenId === l.id && (
+                <LeadPhoneNumbersEditor
+                  leadId={l.id}
+                  numbers={l.phoneNumbers}
+                  actions={{
+                    addPhoneNumberAction: actions.addPhoneNumberAction,
+                    updatePhoneNumberAction: actions.updatePhoneNumberAction,
+                    removePhoneNumberAction: actions.removePhoneNumberAction,
+                    setPhoneNumberPositionAction: actions.setPhoneNumberPositionAction,
+                  }}
+                />
+              )}
+
               {!l.deleted ? (
                 <div className="flex flex-wrap items-center gap-2 mt-2">
                   <button
                     type="button"
                     disabled={isBusy}
-                    onClick={() => withBusy(l.id, () => actions.logCallAction(l.id))}
+                    onClick={async () => {
+                      setAssignError(null);
+                      const result = await withBusy(l.id, () => actions.logCallAction(l.id));
+                      if (!result.ok && result.error) setAssignError({ id: l.id, message: result.error });
+                    }}
                     className="text-[11px] bg-green-700 text-white rounded-lg px-2.5 py-1"
                   >
                     Log call ({l.calledCount})
@@ -382,6 +470,18 @@ export function LeadsManager({
                   >
                     + Note
                   </button>
+                  {actions.sendTextAction && l.phone && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTextError(null);
+                        setTextDraftId(l.id);
+                      }}
+                      className="text-[11px] border border-gray-300 dark:border-gray-700 rounded-lg px-2.5 py-1"
+                    >
+                      Text
+                    </button>
+                  )}
                   <select
                     value={l.disposition}
                     disabled={isBusy}
@@ -410,7 +510,11 @@ export function LeadsManager({
                     Remove
                   </button>
                 </div>
-              ) : (
+              ) : null}
+              {assignError?.id === l.id && (
+                <p className="text-[11px] text-red-600 mt-1">{assignError.message}</p>
+              )}
+              {l.deleted && (
                 <div className="mt-2">
                   <button
                     type="button"
