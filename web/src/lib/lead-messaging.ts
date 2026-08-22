@@ -214,6 +214,29 @@ export async function createCampaign(input: CreateCampaignInput) {
   return campaign;
 }
 
+// "Text back" — a single-lead scheduled text, reachable right from the
+// lead's own row alongside the disposition/call-logging controls (not the
+// multi-lead campaign composer's several-step flow). Reuses createCampaign
+// as-is rather than a second scheduling path — a one-lead campaign is
+// still just a campaign, and it shows up in the same /marketing/campaigns
+// history and gets picked up by the same processDueCampaigns loop
+// (immediate best-effort pass + the daily cron backstop) as any other one.
+export async function scheduleTextForLead(
+  leadId: string,
+  text: string,
+  scheduledFor: Date,
+  actor: { role: "sales_rep" | "admin"; id: string }
+) {
+  if (!text.trim()) throw new Error("Message can't be empty.");
+  return createCampaign({
+    templateText: text,
+    items: [{ leadId, text: text.trim() }],
+    scheduledFor,
+    personalized: false,
+    actor,
+  });
+}
+
 export async function cancelCampaign(campaignId: string, actor: { role: "sales_rep" | "admin"; id: string }) {
   const campaign = await prisma.leadMessageCampaign.findUnique({ where: { id: campaignId } });
   if (!campaign) throw new Error("Campaign not found.");

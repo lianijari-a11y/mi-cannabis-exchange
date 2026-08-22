@@ -19,6 +19,7 @@ import {
 } from "@/lib/leads";
 import { lookupLeadContactInfo, applyLeadContactInfo } from "@/lib/lead-contact-lookup";
 import { sendSmsToLead } from "@/lib/vonage-sms";
+import { scheduleTextForLead } from "@/lib/lead-messaging";
 
 const PATH = "/admin/marketing";
 
@@ -102,6 +103,18 @@ export async function sendTextAction(id: string, text: string) {
   const result = await sendSmsToLead(id, text, session.user.id, { role: "admin", id: session.user.id });
   revalidatePath(PATH);
   return result;
+}
+
+export async function scheduleTextAction(id: string, text: string, scheduledForIso: string) {
+  const session = await requireRole("admin");
+  try {
+    await scheduleTextForLead(id, text, new Date(scheduledForIso), { role: "admin", id: session.user.id });
+  } catch (err) {
+    return { ok: false as const, error: err instanceof Error ? err.message : "Something went wrong." };
+  }
+  revalidatePath(PATH);
+  revalidatePath(`${PATH}/campaigns`);
+  return { ok: true as const };
 }
 
 export async function addPhoneNumberAction(leadId: string, phone: string, name: string) {

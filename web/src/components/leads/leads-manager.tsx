@@ -78,6 +78,20 @@ function telHref(p: string | null) {
   return "tel:+1" + d.slice(-10);
 }
 
+// Default the "Text back" datetime-local input to an hour from now — a
+// round, likely-not-in-the-past starting point the rep can freely change.
+function defaultScheduleTime(): string {
+  const d = new Date(Date.now() + 60 * 60 * 1000);
+  d.setSeconds(0, 0);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+function nowForMin(): string {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 export function LeadsManager({
   leads,
   listKey,
@@ -111,6 +125,15 @@ export function LeadsManager({
     // button, same "optional prop, gate on presence" pattern as the two
     // contact-lookup actions above.
     sendTextAction?: (id: string, text: string) => Promise<{ ok: true } | { ok: false; error: string }>;
+    // "Text back" — schedules a text for a future date/time instead of
+    // sending immediately, right from the same row as the disposition
+    // controls. Same optional-prop gating as sendTextAction, since it
+    // routes through the same Vonage-backed send at delivery time.
+    scheduleTextAction?: (
+      id: string,
+      text: string,
+      scheduledForIso: string
+    ) => Promise<{ ok: true } | { ok: false; error: string }>;
     addPhoneNumberAction: (leadId: string, phone: string, name: string) => Promise<void>;
     updatePhoneNumberAction: (id: string, phone: string, name: string) => Promise<void>;
     removePhoneNumberAction: (id: string) => Promise<void>;
@@ -124,6 +147,9 @@ export function LeadsManager({
   const [noteDraftId, setNoteDraftId] = useState<string | null>(null);
   const [textDraftId, setTextDraftId] = useState<string | null>(null);
   const [textError, setTextError] = useState<string | null>(null);
+  const [scheduleDraftId, setScheduleDraftId] = useState<string | null>(null);
+  const [scheduleError, setScheduleError] = useState<string | null>(null);
+  const [scheduleSuccessId, setScheduleSuccessId] = useState<string | null>(null);
   const [numbersOpenId, setNumbersOpenId] = useState<string | null>(null);
   const [assignError, setAssignError] = useState<{ id: string; message: string } | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -429,6 +455,53 @@ export function LeadsManager({
                 <p className="text-[11px] text-red-600 mt-1">{textError}</p>
               )}
 
+              {scheduleDraftId === l.id && actions.scheduleTextAction && (
+                <form
+                  action={async (fd) => {
+                    const text = String(fd.get("text") ?? "").trim();
+                    const when = String(fd.get("when") ?? "");
+                    if (!text || !when) return;
+                    setScheduleError(null);
+                    const result = await withBusy(l.id, () => actions.scheduleTextAction!(l.id, text, new Date(when).toISOString()));
+                    if (result && !result.ok) {
+                      setScheduleError(result.error);
+                      return;
+                    }
+                    setScheduleDraftId(null);
+                    setScheduleSuccessId(l.id);
+                  }}
+                  className="mt-2 flex flex-col gap-1.5 border border-gray-200 dark:border-gray-800 rounded-lg p-2"
+                >
+                  <input
+                    name="text"
+                    autoFocus
+                    placeholder={`Text back ${fmtPhone(l.phone)} later…`}
+                    className="border border-gray-300 dark:border-gray-700 rounded-lg px-2 py-1 text-xs bg-transparent"
+                  />
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <input
+                      type="datetime-local"
+                      name="when"
+                      defaultValue={defaultScheduleTime()}
+                      min={nowForMin()}
+                      className="text-xs border border-gray-300 dark:border-gray-700 rounded-lg px-2 py-1 bg-transparent"
+                    />
+                    <button type="submit" className="text-xs text-green-700 dark:text-green-400 underline">
+                      Schedule
+                    </button>
+                    <button type="button" onClick={() => setScheduleDraftId(null)} className="text-xs text-gray-400">
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              )}
+              {scheduleDraftId === l.id && scheduleError && (
+                <p className="text-[11px] text-red-600 mt-1">{scheduleError}</p>
+              )}
+              {scheduleSuccessId === l.id && (
+                <p className="text-[11px] text-green-700 dark:text-green-400 mt-1">Text scheduled.</p>
+              )}
+
               <button
                 type="button"
                 onClick={() => setNumbersOpenId(numbersOpenId === l.id ? null : l.id)}
@@ -480,6 +553,19 @@ export function LeadsManager({
                       className="text-[11px] border border-gray-300 dark:border-gray-700 rounded-lg px-2.5 py-1"
                     >
                       Text
+                    </button>
+                  )}
+                  {actions.scheduleTextAction && l.phone && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setScheduleError(null);
+                        setScheduleSuccessId(null);
+                        setScheduleDraftId(l.id);
+                      }}
+                      className="text-[11px] border border-amber-300 dark:border-amber-800 text-amber-800 dark:text-amber-300 rounded-lg px-2.5 py-1"
+                    >
+                      Text back
                     </button>
                   )}
                   <select
