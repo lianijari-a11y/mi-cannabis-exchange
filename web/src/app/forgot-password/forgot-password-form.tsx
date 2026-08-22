@@ -26,6 +26,7 @@ export function ForgotPasswordForm() {
           name="email"
           type="email"
           required
+          autoComplete="email"
           className="w-full border border-gray-300 dark:border-gray-700 rounded-lg px-3 py-2 text-sm mt-1 bg-transparent"
         />
       </div>

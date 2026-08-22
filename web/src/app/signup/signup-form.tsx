@@ -256,14 +256,22 @@ export function SignupForm() {
         <label className={labelClass} htmlFor="email">
           Email
         </label>
-        <input id="email" name="email" type="email" required className={inputClass} />
+        <input id="email" name="email" type="email" required autoComplete="username" className={inputClass} />
       </div>
 
       <div>
         <label className={labelClass} htmlFor="password">
           Password
         </label>
-        <input id="password" name="password" type="password" required minLength={8} className={inputClass} />
+        <input
+          id="password"
+          name="password"
+          type="password"
+          required
+          minLength={8}
+          autoComplete="new-password"
+          className={inputClass}
+        />
       </div>
 
       <div>
@@ -276,6 +284,7 @@ export function SignupForm() {
           type="password"
           required
           minLength={8}
+          autoComplete="new-password"
           className={inputClass}
         />
       </div>

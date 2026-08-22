@@ -22,6 +22,7 @@ export function LoginForm() {
           name="email"
           type="email"
           required
+          autoComplete="username"
           defaultValue={state?.email ?? ""}
           className="w-full border border-gray-300 dark:border-gray-700 rounded-lg px-3 py-2 text-sm mt-1 bg-transparent"
         />
@@ -40,6 +41,7 @@ export function LoginForm() {
           name="password"
           type="password"
           required
+          autoComplete="current-password"
           className="w-full border border-gray-300 dark:border-gray-700 rounded-lg px-3 py-2 text-sm mt-1 bg-transparent"
         />
       </div>

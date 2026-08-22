@@ -92,6 +92,7 @@ export default async function NewStaffAccountPage({
             name="email"
             type="email"
             required
+            autoComplete="username"
             className="w-full border border-gray-300 dark:border-gray-700 rounded-lg px-3 py-2 text-sm mt-1 bg-transparent"
           />
         </div>
@@ -117,6 +118,7 @@ export default async function NewStaffAccountPage({
             type="password"
             required
             minLength={8}
+            autoComplete="new-password"
             className="w-full border border-gray-300 dark:border-gray-700 rounded-lg px-3 py-2 text-sm mt-1 bg-transparent"
           />
         </div>
@@ -131,6 +133,7 @@ export default async function NewStaffAccountPage({
             type="password"
             required
             minLength={8}
+            autoComplete="new-password"
             className="w-full border border-gray-300 dark:border-gray-700 rounded-lg px-3 py-2 text-sm mt-1 bg-transparent"
           />
         </div>

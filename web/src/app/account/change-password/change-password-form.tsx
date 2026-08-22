@@ -19,6 +19,7 @@ export function ChangePasswordForm() {
           required
           minLength={8}
           placeholder="At least 8 characters"
+          autoComplete="new-password"
           className="w-full border border-gray-300 dark:border-gray-700 rounded-lg px-3 py-2 text-sm mt-1 bg-transparent"
         />
       </div>
@@ -32,6 +33,7 @@ export function ChangePasswordForm() {
           type="password"
           required
           minLength={8}
+          autoComplete="new-password"
           className="w-full border border-gray-300 dark:border-gray-700 rounded-lg px-3 py-2 text-sm mt-1 bg-transparent"
         />
       </div>

@@ -135,6 +135,7 @@ export function LicenseAuthFlow({ onAuthenticated, onCancel }: { onAuthenticated
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               autoFocus
+              autoComplete="current-password"
               className="w-full border border-gray-300 dark:border-gray-700 rounded-lg px-3 py-2 text-sm mt-1 bg-transparent"
             />
           </div>
@@ -190,6 +191,7 @@ export function LicenseAuthFlow({ onAuthenticated, onCancel }: { onAuthenticated
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
+                  autoComplete="username"
                   className="w-full border border-gray-300 dark:border-gray-700 rounded-lg px-3 py-2 text-sm mt-1 bg-transparent"
                 />
               </div>
@@ -205,6 +207,7 @@ export function LicenseAuthFlow({ onAuthenticated, onCancel }: { onAuthenticated
               minLength={8}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              autoComplete="new-password"
               className="w-full border border-gray-300 dark:border-gray-700 rounded-lg px-3 py-2 text-sm mt-1 bg-transparent"
               placeholder="At least 8 characters"
             />
