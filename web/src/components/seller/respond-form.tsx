@@ -160,6 +160,22 @@ export function RespondForm({
               </select>
             </div>
           </details>
+          <details className="text-xs">
+            <summary className="cursor-pointer text-gray-500 dark:text-gray-400">
+              Transport preference (optional)
+            </summary>
+            <p className="mt-1 mb-2 text-[11px] text-gray-400 dark:text-gray-500">
+              Who you expect to cover the transporter&apos;s fee. This is a stated expectation, not
+              the actual fee — the transporter sets the real amount later and isn&apos;t bound by
+              this.
+            </p>
+            <select name="transportPayerPreference" className={inputClass} defaultValue="">
+              <option value="">Preference unchanged</option>
+              <option value="split">Split 50/50</option>
+              <option value="grower">Grower pays</option>
+              <option value="retailer">Retailer pays</option>
+            </select>
+          </details>
           <div className="flex gap-2">
             <button
               type="submit"

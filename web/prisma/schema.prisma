@@ -625,6 +625,21 @@ model OfferRound {
   rejectionFeeRate  Float? // 0-100 (%), of deal value
   rejectionFeePayer String? // "grower" | "retailer" | "split"
 
+  // Added 2026-08-23 — a non-binding expectation of who covers the
+  // transporter's fee, negotiated by the buyer/seller themselves during
+  // this same round-by-round exchange, same resolution pattern as
+  // rejectionFeePayer above (most recent round's value wins at accept).
+  // Deliberately NOT the actual transport fee itself — that's still the
+  // transporter's own unilateral call (Shipment.transportFeePayer,
+  // lib/shipments.ts's setTransportFee), made later, after a transporter
+  // is even assigned. This field only records what the two negotiating
+  // parties expected/agreed going in; the transporter's fee-setting form
+  // defaults to it but is free to set something else — same "tracked, not
+  // enforced" posture as every other dollar figure in this app. Confirmed
+  // via AskUserQuestion: non-binding was the explicit choice over making
+  // it a real constraint on the transporter.
+  transportPayerPreference String? // "grower" | "retailer" | "split"
+
   // True only when lib/ai-negotiation.ts's runAiNegotiationStep submitted
   // this round on a party's behalf under an active AiNegotiationMandate —
   // never true for a human-submitted round. Always shown in the UI, never
@@ -720,6 +735,13 @@ model Deal {
   // it. See the OfferRound comment above and CLAUDE.md §14.
   rejectionFeeRate  Float  @default(0)
   rejectionFeePayer String @default("split")
+
+  // Resolved the same way, from OfferRound.transportPayerPreference — null
+  // (no default) if the parties never discussed it, since unlike a
+  // contingent rejection fee, fabricating a default payer for a cost every
+  // deal actually incurs would be presumptuous. See the OfferRound
+  // comment above.
+  transportPayerPreference String?
 
   // Fulfillment: an invoice is auto-generated the moment the deal is
   // created (see lib/invoice.ts) so the retailer is never blocked waiting

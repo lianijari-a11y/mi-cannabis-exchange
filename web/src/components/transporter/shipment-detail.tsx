@@ -229,6 +229,15 @@ export async function TransporterShipmentDetail({
 
       <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-4 space-y-3">
         <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Your transport fee</h2>
+        {shipment.deal.transportPayerPreference && shipment.transportFeeAmount == null && (
+          <p className="text-xs text-amber-600 dark:text-amber-400">
+            Buyer and seller expected{" "}
+            {shipment.deal.transportPayerPreference === "split"
+              ? "a 50/50 split"
+              : `the ${shipment.deal.transportPayerPreference} to pay`}{" "}
+            — pre-filled below, but you set the real fee and payer.
+          </p>
+        )}
         {shipment.transportFeeAmount != null && (
           <p className="text-xs text-gray-600 dark:text-gray-400">
             ${shipment.transportFeeAmount} —{" "}
@@ -258,7 +267,7 @@ export async function TransporterShipmentDetail({
             <label className="text-[10px] text-gray-400 block">Who pays</label>
             <select
               name="transportFeePayer"
-              defaultValue={shipment.transportFeePayer ?? "split"}
+              defaultValue={shipment.transportFeePayer ?? shipment.deal.transportPayerPreference ?? "split"}
               className="border border-gray-300 dark:border-gray-700 rounded-lg px-2 py-1.5 text-xs bg-transparent"
             >
               <option value="split">Split 50/50</option>

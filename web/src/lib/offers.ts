@@ -114,6 +114,12 @@ export async function addOfferRound(params: {
   message?: string;
   rejectionFeeRate?: number;
   rejectionFeePayer?: "grower" | "retailer" | "split";
+  // A non-binding expectation of who covers the transporter's fee,
+  // negotiated the same way as price/rejectionFee. Never set by
+  // lib/ai-negotiation.ts's engine — the AI mandate negotiates price only
+  // (confirmed choice), so this just carries forward from whatever a
+  // human last proposed, same as terms/rejectionFee already do.
+  transportPayerPreference?: "grower" | "retailer" | "split";
   // Set only by lib/ai-negotiation.ts's engine — disclosed on the round
   // (never disguised as a human decision) and, critically, never re-arms
   // the automated-step hook below. See CLAUDE.md's AI-negotiation pacing
@@ -123,9 +129,18 @@ export async function addOfferRound(params: {
   // of resolving instantly in one synchronous chain.
   aiGenerated?: boolean;
 }) {
+  // Full round history, not just the latest one — accept's resolution
+  // below needs to find the most recent round that actually specified each
+  // field independently (price, terms, rejection fee, transport
+  // preference), not just check whether the single last round happened to
+  // restate it. A `take: 1` here previously meant a round that only
+  // touched price (leaving terms/fees unspecified) would silently reset
+  // those fields to their defaults on accept, discarding whatever an
+  // earlier round in the same negotiation had actually agreed — found via
+  // real end-to-end negotiation simulation, not by inspection.
   const thread = await prisma.offerThread.findUnique({
     where: { id: params.threadId },
-    include: { listing: true, rounds: { orderBy: { createdAt: "desc" }, take: 1 } },
+    include: { listing: true, rounds: { orderBy: { createdAt: "desc" } } },
   });
   if (!thread) throw new Error("Thread not found.");
   if (thread.status !== "open") throw new Error("This negotiation is no longer open.");
@@ -152,6 +167,7 @@ export async function addOfferRound(params: {
       message: params.message ?? null,
       rejectionFeeRate: params.rejectionFeeRate ?? null,
       rejectionFeePayer: params.rejectionFeePayer ?? null,
+      transportPayerPreference: params.transportPayerPreference ?? null,
       aiGenerated: params.aiGenerated ?? false,
     },
   });
@@ -207,20 +223,32 @@ export async function addOfferRound(params: {
       }.`
     );
   } else if (params.action === "accept") {
-    // Terms of the deal are whatever was most recently on the table — the
-    // round being accepted, if it carried terms, otherwise the last prior
-    // round's terms, otherwise the listing's original posted terms.
-    const lastProposal = thread.rounds[0];
-    const finalPrice = params.price ?? lastProposal?.price ?? thread.listing.pricePerUnit;
-    const finalQuantity = params.quantity ?? lastProposal?.quantity ?? thread.listing.quantity;
-    const finalTerms = params.terms ?? lastProposal?.terms ?? thread.listing.terms;
+    // Each field resolves independently to whatever was most recently
+    // *actually specified* for it — the round being accepted, if it
+    // carried a value, otherwise the most recent prior round that did,
+    // otherwise a field-specific default. This is deliberately NOT just
+    // "the single last round" (thread.rounds[0]): a round that only
+    // touches price, leaving terms/fees unspecified, must not reset those
+    // fields back to their defaults — they stay whatever an earlier round
+    // in the same negotiation actually agreed. thread.rounds is already
+    // ordered newest-first.
+    const mostRecent = <K extends "price" | "quantity" | "terms" | "rejectionFeeRate" | "rejectionFeePayer" | "transportPayerPreference">(
+      key: K
+    ) => thread.rounds.find((r) => r[key] != null)?.[key] ?? null;
+
+    const finalPrice = params.price ?? mostRecent("price") ?? thread.listing.pricePerUnit;
+    const finalQuantity = params.quantity ?? mostRecent("quantity") ?? thread.listing.quantity;
+    const finalTerms = params.terms ?? mostRecent("terms") ?? thread.listing.terms;
     // Rejection fee terms — negotiated by the buyer/seller themselves (not
     // broker-set), same resolution pattern as price/quantity/terms above.
     // 0/"split" if it was never discussed — see CLAUDE.md §14.
-    const rejectionFeeRate =
-      params.rejectionFeeRate ?? lastProposal?.rejectionFeeRate ?? 0;
-    const rejectionFeePayer =
-      params.rejectionFeePayer ?? lastProposal?.rejectionFeePayer ?? "split";
+    const rejectionFeeRate = params.rejectionFeeRate ?? mostRecent("rejectionFeeRate") ?? 0;
+    const rejectionFeePayer = params.rejectionFeePayer ?? mostRecent("rejectionFeePayer") ?? "split";
+    // No default (unlike rejectionFeePayer) — see the schema comment on
+    // Deal.transportPayerPreference for why leaving it unset is the honest
+    // choice here rather than fabricating one.
+    const transportPayerPreference =
+      params.transportPayerPreference ?? mostRecent("transportPayerPreference") ?? null;
 
     const sellerId = thread.listing.postedById;
     const retailerId = thread.retailerId;
@@ -250,6 +278,7 @@ export async function addOfferRound(params: {
           finalTerms,
           rejectionFeeRate,
           rejectionFeePayer,
+          transportPayerPreference,
         },
       }),
     ]);
@@ -375,6 +404,7 @@ export async function threadForRetailerListing(listingId: string, retailerId: st
           invoiceUrl: true,
           invoiceAutoGenerated: true,
           productStatus: true,
+          transportPayerPreference: true,
           ...DEAL_SHIPMENT_INCLUDE,
         },
       },
@@ -423,6 +453,7 @@ export async function threadsForListing(listingId: string, sellerId: string) {
           invoiceAcceptedAt: true,
           invoiceAutoGenerated: true,
           productStatus: true,
+          transportPayerPreference: true,
           ...DEAL_SHIPMENT_INCLUDE,
         },
       },

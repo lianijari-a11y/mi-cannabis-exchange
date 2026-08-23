@@ -62,6 +62,8 @@ type Deal = {
   productStatus: string;
   commission: DealCommission | null;
   rejection?: DealRejection;
+  // Non-binding — see Deal.transportPayerPreference's schema comment.
+  transportPayerPreference?: string | null;
 };
 
 export function DealPanelSeller({
@@ -84,6 +86,14 @@ export function DealPanelSeller({
   return (
     <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-800">
       <h3 className="text-xs font-semibold text-gray-900 dark:text-gray-100 mb-2">Fulfillment</h3>
+
+      {deal.transportPayerPreference && (
+        <p className="text-xs text-gray-400 dark:text-gray-500 mb-2">
+          Transport expectation from negotiation:{" "}
+          {deal.transportPayerPreference === "split" ? "split 50/50" : `${deal.transportPayerPreference} pays`} —
+          the transporter sets the real fee, not bound by this.
+        </p>
+      )}
 
       {deal.invoiceUrl && !deal.shipment && (
         <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">

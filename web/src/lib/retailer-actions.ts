@@ -32,6 +32,7 @@ export async function handleRetailerRespond(formData: FormData) {
   const message = String(formData.get("message") ?? "").trim();
   const rejectionFeeRateRaw = String(formData.get("rejectionFeeRate") ?? "").trim();
   const rejectionFeePayerRaw = String(formData.get("rejectionFeePayer") ?? "").trim();
+  const transportPayerPreferenceRaw = String(formData.get("transportPayerPreference") ?? "").trim();
   const expiresInRaw = String(formData.get("threadExpiresInHours") ?? "").trim();
   const expiresInHours = expiresInRaw ? Number(expiresInRaw) : null;
 
@@ -62,6 +63,7 @@ export async function handleRetailerRespond(formData: FormData) {
     message: message || undefined,
     rejectionFeeRate: rejectionFeeRateRaw ? Number(rejectionFeeRateRaw) : undefined,
     rejectionFeePayer: (rejectionFeePayerRaw || undefined) as never,
+    transportPayerPreference: (transportPayerPreferenceRaw || undefined) as never,
   });
 
   redirect(`/retailer/listings/${listingId}`);

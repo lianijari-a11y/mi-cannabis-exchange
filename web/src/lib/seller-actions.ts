@@ -161,6 +161,7 @@ export async function handleSellerRespond(role: SellerRole, formData: FormData) 
   const message = String(formData.get("message") ?? "").trim();
   const rejectionFeeRateRaw = String(formData.get("rejectionFeeRate") ?? "").trim();
   const rejectionFeePayerRaw = String(formData.get("rejectionFeePayer") ?? "").trim();
+  const transportPayerPreferenceRaw = String(formData.get("transportPayerPreference") ?? "").trim();
 
   await addOfferRound({
     threadId,
@@ -172,6 +173,7 @@ export async function handleSellerRespond(role: SellerRole, formData: FormData) 
     message: message || undefined,
     rejectionFeeRate: rejectionFeeRateRaw ? Number(rejectionFeeRateRaw) : undefined,
     rejectionFeePayer: (rejectionFeePayerRaw || undefined) as never,
+    transportPayerPreference: (transportPayerPreferenceRaw || undefined) as never,
   });
 
   redirect(`/${role}/listings/${formData.get("listingId")}`);

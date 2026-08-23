@@ -65,6 +65,11 @@ type Deal = {
   productStatus: string;
   commission: DealCommission | null;
   rejection?: DealRejection;
+  // Non-binding — what the buyer/seller expected going in, negotiated
+  // during their own offer rounds. The transporter's own fee-setting form
+  // defaults to it but can still set something else. See
+  // Deal.transportPayerPreference's schema comment.
+  transportPayerPreference?: string | null;
 };
 
 type Transporter = { id: string; businessName: string | null; fullName: string; preferredTransporter: boolean };
@@ -164,6 +169,14 @@ export function DealPanelRetailer({
   return (
     <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-800">
       <h3 className="text-xs font-semibold text-gray-900 dark:text-gray-100 mb-2">Fulfillment</h3>
+
+      {deal.transportPayerPreference && (
+        <p className="text-xs text-gray-400 dark:text-gray-500 mb-2">
+          Transport expectation from negotiation:{" "}
+          {deal.transportPayerPreference === "split" ? "split 50/50" : `${deal.transportPayerPreference} pays`} —
+          the transporter sets the real fee, not bound by this.
+        </p>
+      )}
 
       {!deal.invoiceUrl && (
         <p className="text-xs text-gray-500 dark:text-gray-400">
