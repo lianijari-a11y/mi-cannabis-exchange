@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { TERMS, TERMS_LABELS, EXPIRATION_OPTIONS } from "@/lib/constants";
 
 const inputClass =
@@ -10,17 +10,39 @@ export function RespondForm({
   action,
   threadId,
   listingId,
+  initialPrice,
+  hidden,
 }: {
   action: (formData: FormData) => void;
   threadId: string;
   listingId: string;
+  // Pre-fills and opens straight into counter mode with this price — used
+  // by a Broker's mediation suggestion's "Counter at $X" button.
+  initialPrice?: number;
+  // While this party has an active AI-negotiation mandate on this thread,
+  // their own manual controls are hidden — without this, a party could
+  // manually counter at the same moment their own AI is mid-step,
+  // producing a confusing double-actor trail. AI status/opt-out lives in
+  // ai-mandate-panel.tsx instead.
+  hidden?: boolean;
 }) {
-  const [mode, setMode] = useState<"idle" | "counter">("idle");
+  const [mode, setMode] = useState<"idle" | "counter">(initialPrice != null ? "counter" : "idle");
+  // useState's initial value only applies at mount — this component is
+  // already mounted (and idle) by the time a Broker suggestion's "Counter
+  // at $X" click changes `initialPrice` from undefined to a real number,
+  // so switching into counter mode needs its own effect, not just the
+  // initializer above (which only covers the case of mounting with a
+  // suggestion already picked).
+  useEffect(() => {
+    if (initialPrice != null) setMode("counter");
+  }, [initialPrice]);
   // Only the retailer opening a brand-new thread (threadId === "") gets to
   // choose an expiration — it's a one-time thread-level setting, not
   // renegotiated on every counter. See CLAUDE.md §18.
   const isNewThread = threadId === "";
   const [expiresInHours, setExpiresInHours] = useState("");
+
+  if (hidden) return null;
 
   return (
     <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-800">
@@ -84,11 +106,18 @@ export function RespondForm({
           {isNewThread && <input type="hidden" name="threadExpiresInHours" value={expiresInHours} />}
           <div className="flex gap-2">
             <input
+              // Same mount-only-initializer issue as `mode` above —
+              // `defaultValue` is only read the first time this
+              // uncontrolled input mounts, so a `key` tied to initialPrice
+              // forces a fresh mount (and a fresh defaultValue) whenever a
+              // different suggestion is picked.
+              key={initialPrice ?? "no-suggestion"}
               name="price"
               type="number"
               step="0.01"
               min="0"
               placeholder="Price per unit"
+              defaultValue={initialPrice}
               className={inputClass}
             />
             <select name="terms" className={inputClass} defaultValue="">

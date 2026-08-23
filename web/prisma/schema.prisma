@@ -175,6 +175,8 @@ model User {
   passwordResetTokens        PasswordResetToken[]
   assignedLeads              Lead[]
   leadMessageCampaigns       LeadMessageCampaign[] @relation("LeadCampaignCreatedBy")
+  aiNegotiationMandates      AiNegotiationMandate[] @relation("AiNegotiationMandateParty")
+  brokerSuggestions          BrokerSuggestion[]     @relation("BrokerSuggestionBroker")
 
   @@index([retailerOwnerId])
   @@index([assignedSalesRepId])
@@ -578,8 +580,18 @@ model OfferThread {
   cartOrderId String?
   cartOrder   CartOrder? @relation(fields: [cartOrderId], references: [id])
 
-  rounds OfferRound[]
-  deal   Deal?
+  // Added for AI-assisted negotiation — set when AI's mandate on this thread
+  // is exhausted (round cap hit, or the next move would have to cross a
+  // party's walk-away price) without reaching a deal. A human Broker takes
+  // over from here; AI never acts on this thread again once flagged. See
+  // lib/ai-negotiation.ts.
+  needsBrokerMediation Boolean   @default(false)
+  mediationFlaggedAt   DateTime?
+
+  rounds            OfferRound[]
+  deal              Deal?
+  mandates          AiNegotiationMandate[]
+  brokerSuggestions BrokerSuggestion[]
 
   @@unique([listingId, retailerId])
   @@index([status])
@@ -613,9 +625,72 @@ model OfferRound {
   rejectionFeeRate  Float? // 0-100 (%), of deal value
   rejectionFeePayer String? // "grower" | "retailer" | "split"
 
+  // True only when lib/ai-negotiation.ts's runAiNegotiationStep submitted
+  // this round on a party's behalf under an active AiNegotiationMandate —
+  // never true for a human-submitted round. Always shown in the UI, never
+  // used to disguise an AI decision as a human one.
+  aiGenerated Boolean @default(false)
+
   createdAt DateTime @default(now())
 
   @@map("offer_rounds")
+}
+
+// A party's (retailer or seller) standing authorization for AI to negotiate
+// on their behalf on one specific open thread, within an explicit price
+// range they set themselves. One per party per thread — both sides of the
+// same thread can have their own independent mandate. See
+// lib/ai-negotiation.ts for the full engine; this table is just the
+// authorization + range + round-budget record.
+model AiNegotiationMandate {
+  id       String @id @default(cuid())
+  threadId String
+  thread   OfferThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+
+  partyRole String // "retailer" | "seller"
+  partyId   String
+  party     User   @relation("AiNegotiationMandateParty", fields: [partyId], references: [id])
+
+  // Retailer: opening (low) offer, walk-away = ceiling they'll pay
+  // (walkAwayPrice >= openingPrice). Seller: opening (high) offer,
+  // walk-away = floor they'll accept (walkAwayPrice <= openingPrice).
+  // Direction validated in lib/ai-negotiation.ts, not here.
+  openingPrice  Float
+  walkAwayPrice Float
+
+  roundsUsed Int     @default(0)
+  maxRounds  Int     @default(5)
+  active     Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([threadId, partyRole])
+  @@index([threadId])
+  @@map("ai_negotiation_mandates")
+}
+
+// A Broker's proposed compromise price on a thread flagged
+// needsBrokerMediation — deliberately NOT a new negotiation-write path for
+// Broker (see lib/broker-mediation.ts): it's a suggestion rendered to both
+// parties, who each submit their own real OfferRound through the existing
+// human accept/counter flow if they want to act on it. Broker never writes
+// to OfferThread/OfferRound directly.
+model BrokerSuggestion {
+  id       String @id @default(cuid())
+  threadId String
+  thread   OfferThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  brokerId String
+  broker   User   @relation("BrokerSuggestionBroker", fields: [brokerId], references: [id])
+
+  suggestedPrice Float
+  message        String?
+
+  createdAt  DateTime  @default(now())
+  resolvedAt DateTime?
+
+  @@index([threadId])
+  @@map("broker_suggestions")
 }
 
 // Created when a thread's status becomes "accepted". Holds both real

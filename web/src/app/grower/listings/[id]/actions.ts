@@ -10,6 +10,9 @@ import {
   handleAcceptRejectionCounter,
   handleRequireReturnInsteadOfCounter,
   handleEditListing,
+  handleOptIntoAiNegotiation,
+  handleTakeBackAiControl,
+  handlePollAiNegotiation,
 } from "@/lib/seller-actions";
 
 export async function respond(formData: FormData) {
@@ -46,4 +49,16 @@ export async function requireReturnInsteadOfCounter(formData: FormData) {
 
 export async function editListing(formData: FormData) {
   await handleEditListing("grower", formData);
+}
+
+export async function optIntoAiNegotiation(formData: FormData) {
+  await handleOptIntoAiNegotiation("grower", formData);
+}
+
+export async function takeBackAiControl(formData: FormData) {
+  await handleTakeBackAiControl("grower", formData);
+}
+
+export async function pollAiNegotiation(threadId: string) {
+  await handlePollAiNegotiation("grower", threadId);
 }

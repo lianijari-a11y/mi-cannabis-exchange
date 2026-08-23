@@ -4,8 +4,11 @@ import { getListingForSeller } from "@/lib/listings";
 import { threadsForListing, recordThreadView } from "@/lib/offers";
 import { retailerRatingForThread } from "@/lib/market";
 import { splitContractsForListing } from "@/lib/split-contracts";
+import { suggestedMidpoint } from "@/lib/ai-negotiation";
 import { TERMS_LABELS, type Terms } from "@/lib/constants";
-import { RespondForm } from "@/components/seller/respond-form";
+import { NegotiationControls } from "@/components/ai-negotiation/negotiation-controls";
+import { AiMandatePanel } from "@/components/ai-negotiation/ai-mandate-panel";
+import { AiNegotiationPoll } from "@/components/ai-negotiation/ai-negotiation-poll";
 import { DealPanelSeller } from "@/components/deal/deal-panel-seller";
 import { ListingHeaderCard } from "@/components/seller/listing-header-card";
 
@@ -22,6 +25,9 @@ export async function SellerListingDetail({
   requireReturnAction,
   editAction,
   editError,
+  optInAiAction,
+  takeBackAiAction,
+  pollAiAction,
 }: {
   listingId: string;
   sellerId: string;
@@ -35,6 +41,9 @@ export async function SellerListingDetail({
   requireReturnAction?: (formData: FormData) => void;
   editAction?: (formData: FormData) => void;
   editError?: string;
+  optInAiAction?: (formData: FormData) => void;
+  takeBackAiAction?: (formData: FormData) => void;
+  pollAiAction?: (threadId: string) => Promise<void>;
 }) {
   const listing = await getListingForSeller(listingId, sellerId);
   if (!listing) notFound();
@@ -118,6 +127,11 @@ export async function SellerListingDetail({
                     <span className="font-medium">
                       {round.actorRole === "seller" ? "You" : thread.retailer.anonHandle}
                     </span>{" "}
+                    {round.aiGenerated && (
+                      <span className="text-[9px] font-semibold uppercase tracking-wide bg-green-700 text-white px-1.5 py-0.5 rounded-full mr-1">
+                        AI
+                      </span>
+                    )}
                     {round.action === "accept"
                       ? "accepted"
                       : round.action === "reject"
@@ -131,11 +145,36 @@ export async function SellerListingDetail({
               </ul>
 
               {thread.status === "open" && (
-                <RespondForm
-                  action={respondAction}
-                  threadId={thread.id}
-                  listingId={listing.id}
-                />
+                <>
+                  {pollAiAction && <AiNegotiationPoll pollAction={pollAiAction.bind(null, thread.id)} />}
+                  {optInAiAction && takeBackAiAction && (
+                    <AiMandatePanel
+                      partyRole="seller"
+                      mandate={thread.mandates[0] ?? null}
+                      needsBrokerMediation={thread.needsBrokerMediation}
+                      optInAction={optInAiAction}
+                      takeBackAction={takeBackAiAction}
+                      threadId={thread.id}
+                      listingId={listing.id}
+                      defaultPrice={listing.pricePerUnit}
+                    />
+                  )}
+                  {!thread.mandates[0]?.active &&
+                    !thread.needsBrokerMediation &&
+                    suggestedMidpoint(thread.rounds) != null && (
+                      <p className="text-xs text-gray-400 dark:text-gray-500 mb-2">
+                        Suggested compromise: ${suggestedMidpoint(thread.rounds)}/unit — just a hint,
+                        nothing is sent unless you submit it yourself below.
+                      </p>
+                    )}
+                  <NegotiationControls
+                    action={respondAction}
+                    threadId={thread.id}
+                    listingId={listing.id}
+                    hidden={thread.mandates[0]?.active}
+                    suggestions={thread.brokerSuggestions}
+                  />
+                </>
               )}
 
               {thread.status === "accepted" && thread.deal && (

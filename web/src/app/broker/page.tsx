@@ -2,7 +2,7 @@ import { requireRole } from "@/lib/dal";
 import { PortalShell } from "@/components/portal-shell";
 import { BrokerDashboard } from "@/components/broker/broker-dashboard";
 import { StateMarketWidget } from "@/components/state-market-widget";
-import { setCommissionAction, markCommissionPaidAction } from "./actions";
+import { setCommissionAction, markCommissionPaidAction, suggestPriceAction } from "./actions";
 
 const NAV = [
   { href: "/broker", label: "All negotiations" },
@@ -26,6 +26,7 @@ export default async function BrokerPage({
       <BrokerDashboard
         setCommissionAction={setCommissionAction}
         markCommissionPaidAction={markCommissionPaidAction}
+        suggestPriceAction={suggestPriceAction}
       />
     </PortalShell>
   );

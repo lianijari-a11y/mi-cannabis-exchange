@@ -1,4 +1,5 @@
 import "server-only";
+import { after } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { notify } from "@/lib/notifications";
 import { generateInvoiceForDeal } from "@/lib/invoice";
@@ -113,6 +114,14 @@ export async function addOfferRound(params: {
   message?: string;
   rejectionFeeRate?: number;
   rejectionFeePayer?: "grower" | "retailer" | "split";
+  // Set only by lib/ai-negotiation.ts's engine — disclosed on the round
+  // (never disguised as a human decision) and, critically, never re-arms
+  // the automated-step hook below. See CLAUDE.md's AI-negotiation pacing
+  // rule: an AI-submitted round never triggers another automated step:
+  // only a human counter does. This is what makes an AI-vs-AI thread
+  // advance one visible step at a time (via the client-side poll) instead
+  // of resolving instantly in one synchronous chain.
+  aiGenerated?: boolean;
 }) {
   const thread = await prisma.offerThread.findUnique({
     where: { id: params.threadId },
@@ -143,6 +152,7 @@ export async function addOfferRound(params: {
       message: params.message ?? null,
       rejectionFeeRate: params.rejectionFeeRate ?? null,
       rejectionFeePayer: params.rejectionFeePayer ?? null,
+      aiGenerated: params.aiGenerated ?? false,
     },
   });
 
@@ -281,6 +291,27 @@ export async function addOfferRound(params: {
     }
   }
 
+  // A human just submitted a counter — if the *other* party has an active
+  // AI-negotiation mandate on this thread, give it a chance to take its
+  // one automated step in response. Deliberately gated on
+  // action === "counter" && !aiGenerated: an AI-submitted round never
+  // re-arms this (see the aiGenerated param's own comment above) — that's
+  // what keeps an AI-vs-AI thread advancing one visible step at a time via
+  // the poll, not resolving instantly in a synchronous chain. Dynamic
+  // import avoids a static circular dependency (lib/ai-negotiation.ts
+  // itself calls addOfferRound); wrapped in its own try/catch so a bug in
+  // that engine can never break an ordinary human accept/counter/reject.
+  if (params.action === "counter" && !params.aiGenerated) {
+    after(async () => {
+      try {
+        const { runAiNegotiationStep } = await import("@/lib/ai-negotiation");
+        await runAiNegotiationStep(thread.id);
+      } catch (err) {
+        console.error("runAiNegotiationStep failed:", err);
+      }
+    });
+  }
+
   return round;
 }
 
@@ -292,6 +323,12 @@ export async function threadsForRetailer(retailerId: string) {
     where: { retailerId },
     include: {
       rounds: { orderBy: { createdAt: "asc" } },
+      // Only this party's own mandate — the seller's own price range is
+      // their private negotiating strategy, never shown to the retailer
+      // even at the "AI is active" level. See AiNegotiationMandate's
+      // schema comment.
+      mandates: { where: { partyRole: "retailer" } },
+      brokerSuggestions: { where: { resolvedAt: null }, orderBy: { createdAt: "desc" } },
       listing: {
         select: {
           id: true,
@@ -330,6 +367,8 @@ export async function threadForRetailerListing(listingId: string, retailerId: st
     where: { listingId_retailerId: { listingId, retailerId } },
     include: {
       rounds: { orderBy: { createdAt: "asc" } },
+      mandates: { where: { partyRole: "retailer" } },
+      brokerSuggestions: { where: { resolvedAt: null }, orderBy: { createdAt: "desc" } },
       deal: {
         select: {
           id: true,
@@ -351,6 +390,8 @@ export async function threadsForSeller(sellerId: string) {
     where: { listing: { postedById: sellerId } },
     include: {
       rounds: { orderBy: { createdAt: "asc" } },
+      mandates: { where: { partyRole: "seller" } },
+      brokerSuggestions: { where: { resolvedAt: null }, orderBy: { createdAt: "desc" } },
       listing: { select: { id: true, strainName: true, category: true, pricePerUnit: true, unit: true, terms: true } },
       retailer: { select: { anonHandle: true } },
     },
@@ -372,6 +413,8 @@ export async function threadsForListing(listingId: string, sellerId: string) {
     where: { listingId, listing: { postedById: sellerId } },
     include: {
       rounds: { orderBy: { createdAt: "asc" } },
+      mandates: { where: { partyRole: "seller" } },
+      brokerSuggestions: { where: { resolvedAt: null }, orderBy: { createdAt: "desc" } },
       retailer: { select: { anonHandle: true } },
       deal: {
         select: {
@@ -407,6 +450,8 @@ export async function allThreadsForBroker() {
   return prisma.offerThread.findMany({
     include: {
       rounds: { orderBy: { createdAt: "asc" } },
+      mandates: true,
+      brokerSuggestions: { orderBy: { createdAt: "desc" } },
       listing: { include: { postedBy: true, media: true } },
       retailer: true,
       deal: true,
@@ -431,6 +476,8 @@ export async function threadsForSalesRep(salesRepId: string) {
     where: { listing: { postedBy: { assignedSalesRepId: salesRepId } } },
     include: {
       rounds: { orderBy: { createdAt: "asc" } },
+      mandates: true,
+      brokerSuggestions: { orderBy: { createdAt: "desc" } },
       listing: { include: { postedBy: true, media: true } },
       retailer: true,
       deal: true,

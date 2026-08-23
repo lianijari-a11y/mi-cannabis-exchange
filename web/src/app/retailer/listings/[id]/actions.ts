@@ -9,6 +9,9 @@ import {
   handleProposeRejectionCounter,
   handleAcceptShipmentSchedule,
   handleSetDeliveryInstructions,
+  handleOptIntoAiNegotiation,
+  handleTakeBackAiControl,
+  handlePollAiNegotiation,
 } from "@/lib/retailer-actions";
 
 export async function respond(formData: FormData) {
@@ -41,4 +44,16 @@ export async function acceptShipmentSchedule(formData: FormData) {
 
 export async function setDeliveryInstructions(formData: FormData) {
   await handleSetDeliveryInstructions(formData);
+}
+
+export async function optIntoAiNegotiation(formData: FormData) {
+  await handleOptIntoAiNegotiation(formData);
+}
+
+export async function takeBackAiControl(formData: FormData) {
+  await handleTakeBackAiControl(formData);
+}
+
+export async function pollAiNegotiation(threadId: string) {
+  await handlePollAiNegotiation(threadId);
 }

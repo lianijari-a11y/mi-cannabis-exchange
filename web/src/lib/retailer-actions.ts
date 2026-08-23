@@ -8,6 +8,7 @@ import { acceptInvoiceAndAssignTransporter, acceptShipmentSchedule, setDeliveryI
 import { toggleWatchlist } from "@/lib/watchlist";
 import { toggleDismissal } from "@/lib/dismissals";
 import { acceptProduct, rejectProduct, chooseReturn, proposeRejectionCounter } from "@/lib/commission";
+import { createOrUpdateMandate, deactivateMandate, runAiNegotiationStep } from "@/lib/ai-negotiation";
 
 export async function handleRetailerRespond(formData: FormData) {
   const session = await requireRole("retailer");
@@ -152,6 +153,54 @@ export async function handleSetDeliveryInstructions(formData: FormData) {
   const instructions = String(formData.get("instructions") ?? "");
   await setDeliveryInstructions(shipmentId, session.user.id, instructions);
   redirect(`/retailer/listings/${listingId}`);
+}
+
+// Opt into (or update) AI-assisted negotiation on one open thread — the
+// retailer gives AI a real price range and, from here on, it submits real
+// counter-offers on their behalf in response to the seller's moves. See
+// lib/ai-negotiation.ts's own extensive comment for the safety rails.
+export async function handleOptIntoAiNegotiation(formData: FormData) {
+  const session = await requireRole("retailer");
+  const threadId = String(formData.get("threadId") ?? "");
+  const listingId = String(formData.get("listingId") ?? "");
+  const openingPrice = Number(formData.get("openingPrice"));
+  const walkAwayPrice = Number(formData.get("walkAwayPrice"));
+
+  const result = await createOrUpdateMandate({
+    threadId,
+    partyRole: "retailer",
+    partyId: session.user.id,
+    openingPrice,
+    walkAwayPrice,
+  });
+  if (!result.ok) {
+    redirect(`/retailer/listings/${listingId}?error=${encodeURIComponent(result.error)}`);
+  }
+  redirect(`/retailer/listings/${listingId}`);
+}
+
+// "Take back control" — stops AI from submitting any further rounds on this
+// party's behalf. Does not undo rounds already submitted.
+export async function handleTakeBackAiControl(formData: FormData) {
+  const session = await requireRole("retailer");
+  const threadId = String(formData.get("threadId") ?? "");
+  const listingId = String(formData.get("listingId") ?? "");
+  await deactivateMandate(threadId, "retailer", session.user.id);
+  redirect(`/retailer/listings/${listingId}`);
+}
+
+// Called by the thread page's live-refresh poll (mirrors
+// components/retailer/pos/live-refresh.tsx) while a negotiation with an
+// active AI mandate is open — gives an AI-vs-AI thread a chance to keep
+// advancing even though neither side has a human clicking a button.
+// Deliberately re-checks that the caller is actually this thread's own
+// retailer before running anything, rather than trusting an arbitrary
+// threadId from the client.
+export async function handlePollAiNegotiation(threadId: string) {
+  const session = await requireRole("retailer");
+  const thread = await prisma.offerThread.findUnique({ where: { id: threadId }, select: { retailerId: true } });
+  if (!thread || thread.retailerId !== session.user.id) return;
+  await runAiNegotiationStep(threadId);
 }
 
 export async function handleToggleWatchlist(listingId: string) {

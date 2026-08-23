@@ -15,6 +15,7 @@ import { addOfferRound, type RoundAction } from "@/lib/offers";
 import { uploadInvoice, acceptShipmentSchedule, setPickupInstructions } from "@/lib/shipments";
 import { respondToSplitContract } from "@/lib/split-contracts";
 import { acceptRejectionCounter, requireReturnInsteadOfCounter } from "@/lib/commission";
+import { createOrUpdateMandate, deactivateMandate, runAiNegotiationStep } from "@/lib/ai-negotiation";
 import { CATEGORIES, LICENSED_ROLES, TERMS, type SellerRole } from "@/lib/constants";
 
 // Shared by /grower, /processor, /broker "post a listing" actions — the
@@ -174,6 +175,49 @@ export async function handleSellerRespond(role: SellerRole, formData: FormData) 
   });
 
   redirect(`/${role}/listings/${formData.get("listingId")}`);
+}
+
+// Opt into (or update) AI-assisted negotiation on one open thread — same
+// engine/safety rails as the retailer side (lib/ai-negotiation.ts), just
+// authorized as the seller party instead.
+export async function handleOptIntoAiNegotiation(role: SellerRole, formData: FormData) {
+  const session = await requireRole(role);
+  const threadId = String(formData.get("threadId") ?? "");
+  const listingId = String(formData.get("listingId") ?? "");
+  const openingPrice = Number(formData.get("openingPrice"));
+  const walkAwayPrice = Number(formData.get("walkAwayPrice"));
+
+  const result = await createOrUpdateMandate({
+    threadId,
+    partyRole: "seller",
+    partyId: session.user.id,
+    openingPrice,
+    walkAwayPrice,
+  });
+  if (!result.ok) {
+    redirect(`/${role}/listings/${listingId}?error=${encodeURIComponent(result.error)}`);
+  }
+  redirect(`/${role}/listings/${listingId}`);
+}
+
+export async function handleTakeBackAiControl(role: SellerRole, formData: FormData) {
+  const session = await requireRole(role);
+  const threadId = String(formData.get("threadId") ?? "");
+  const listingId = String(formData.get("listingId") ?? "");
+  await deactivateMandate(threadId, "seller", session.user.id);
+  redirect(`/${role}/listings/${listingId}`);
+}
+
+// Same "re-check the caller actually owns this thread" posture as
+// retailer-actions.ts's own poll handler.
+export async function handlePollAiNegotiation(role: SellerRole, threadId: string) {
+  const session = await requireRole(role);
+  const thread = await prisma.offerThread.findUnique({
+    where: { id: threadId },
+    include: { listing: { select: { postedById: true } } },
+  });
+  if (!thread || thread.listing.postedById !== session.user.id) return;
+  await runAiNegotiationStep(threadId);
 }
 
 // Grower/processor uploads an invoice against their own accepted deal —

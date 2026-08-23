@@ -10,6 +10,9 @@ import {
   proposeRejectionCounter,
   acceptShipmentSchedule,
   setDeliveryInstructions,
+  optIntoAiNegotiation,
+  takeBackAiControl,
+  pollAiNegotiation,
 } from "./actions";
 
 const NAV = [
@@ -44,6 +47,9 @@ export default async function RetailerListingDetailPage({
         proposeRejectionCounterAction={proposeRejectionCounter}
         acceptScheduleAction={acceptShipmentSchedule}
         setDeliveryInstructionsAction={setDeliveryInstructions}
+        optInAiAction={optIntoAiNegotiation}
+        takeBackAiAction={takeBackAiControl}
+        pollAiAction={pollAiNegotiation}
         error={error}
       />
     </PortalShell>

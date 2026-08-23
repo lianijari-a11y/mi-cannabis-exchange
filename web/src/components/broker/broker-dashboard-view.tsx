@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import type { allThreadsForBroker, allDealsForBroker } from "@/lib/offers";
 import { TERMS_LABELS, SHIPMENT_STATUS_LABELS, type Terms, type ShipmentStatus } from "@/lib/constants";
 import { CommissionForm } from "@/components/broker/commission-form";
+import { BrokerSuggestionForm } from "@/components/broker/broker-suggestion-form";
 
 type Thread = Awaited<ReturnType<typeof allThreadsForBroker>>[number];
 type Deal = Awaited<ReturnType<typeof allDealsForBroker>>[number];
@@ -50,11 +51,13 @@ export function BrokerDashboardView({
   deals,
   setCommissionAction,
   markCommissionPaidAction,
+  suggestPriceAction,
 }: {
   threads: Thread[];
   deals: Deal[];
   setCommissionAction: (formData: FormData) => void;
   markCommissionPaidAction: (formData: FormData) => void;
+  suggestPriceAction: (formData: FormData) => void;
 }) {
   const [query, setQuery] = useState("");
   const needle = query.trim().toLowerCase();
@@ -68,7 +71,8 @@ export function BrokerDashboardView({
     [deals, needle]
   );
 
-  const openThreads = filteredThreads.filter((t) => t.status === "open");
+  const needsMediationThreads = filteredThreads.filter((t) => t.status === "open" && t.needsBrokerMediation);
+  const openThreads = filteredThreads.filter((t) => t.status === "open" && !t.needsBrokerMediation);
   const closedThreads = filteredThreads.filter((t) => t.status !== "open");
   const rejectedThreads = closedThreads.filter((t) => t.status === "rejected");
 
@@ -81,6 +85,68 @@ export function BrokerDashboardView({
         placeholder="Search strain, business name, or license number…"
         className="w-full border border-gray-300 dark:border-gray-700 rounded-lg px-3 py-2 text-sm bg-transparent"
       />
+
+      {needsMediationThreads.length > 0 && (
+        <section>
+          <h1 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">
+            Needs mediation ({needsMediationThreads.length})
+          </h1>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+            AI-assisted negotiation couldn&apos;t reach a deal within the approved range on these —
+            suggest a price to help close them.
+          </p>
+          <div className="space-y-3">
+            {needsMediationThreads.map((thread) => (
+              <div
+                key={thread.id}
+                className="bg-white dark:bg-gray-900 border border-blue-200 dark:border-blue-900 rounded-xl p-4"
+              >
+                <div className="flex items-start justify-between mb-1">
+                  <h3 className="font-medium text-gray-900 dark:text-gray-100">
+                    {thread.listing.strainName}
+                  </h3>
+                  <span className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400">
+                    needs mediation
+                  </span>
+                </div>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
+                  <span className="font-medium text-gray-700 dark:text-gray-300">
+                    {thread.listing.postedBy.businessName ?? thread.listing.postedBy.fullName}
+                  </span>{" "}
+                  (License {thread.listing.postedBy.licenseNumber ?? "—"}) ↔{" "}
+                  <span className="font-medium text-gray-700 dark:text-gray-300">
+                    {thread.retailer.businessName ?? thread.retailer.fullName}
+                  </span>{" "}
+                  (License {thread.retailer.licenseNumber ?? "—"})
+                </p>
+                <ul className="space-y-1 text-xs text-gray-600 dark:text-gray-400 mb-2">
+                  {thread.rounds.map((round) => (
+                    <li key={round.id}>
+                      <span className="font-medium">
+                        {round.actorRole === "seller"
+                          ? thread.listing.postedBy.fullName
+                          : thread.retailer.fullName}
+                      </span>{" "}
+                      {round.aiGenerated && (
+                        <span className="text-[9px] font-semibold uppercase tracking-wide bg-green-700 text-white px-1.5 py-0.5 rounded-full mr-1">
+                          AI
+                        </span>
+                      )}
+                      {round.action}
+                      {round.price != null ? ` — $${round.price}` : ""}
+                    </li>
+                  ))}
+                </ul>
+                <BrokerSuggestionForm
+                  threadId={thread.id}
+                  suggestions={thread.brokerSuggestions}
+                  suggestAction={suggestPriceAction}
+                />
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       <section>
         <h1 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">Active negotiations</h1>

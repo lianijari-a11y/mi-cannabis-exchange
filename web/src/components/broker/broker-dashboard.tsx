@@ -9,9 +9,11 @@ import { BrokerDashboardView } from "@/components/broker/broker-dashboard-view";
 export async function BrokerDashboard({
   setCommissionAction,
   markCommissionPaidAction,
+  suggestPriceAction,
 }: {
   setCommissionAction: (formData: FormData) => void;
   markCommissionPaidAction: (formData: FormData) => void;
+  suggestPriceAction: (formData: FormData) => void;
 }) {
   const [threads, deals] = await Promise.all([allThreadsForBroker(), allDealsForBroker()]);
   return (
@@ -20,6 +22,7 @@ export async function BrokerDashboard({
       deals={deals}
       setCommissionAction={setCommissionAction}
       markCommissionPaidAction={markCommissionPaidAction}
+      suggestPriceAction={suggestPriceAction}
     />
   );
 }

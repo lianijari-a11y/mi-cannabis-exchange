@@ -11,6 +11,9 @@ import {
   acceptRejectionCounter,
   requireReturnInsteadOfCounter,
   editListing,
+  optIntoAiNegotiation,
+  takeBackAiControl,
+  pollAiNegotiation,
 } from "./actions";
 
 const NAV = [
@@ -46,6 +49,9 @@ export default async function GrowerListingDetailPage({
         requireReturnAction={requireReturnInsteadOfCounter}
         editAction={editListing}
         editError={error ? decodeURIComponent(error) : undefined}
+        optInAiAction={optIntoAiNegotiation}
+        takeBackAiAction={takeBackAiControl}
+        pollAiAction={pollAiNegotiation}
       />
     </PortalShell>
   );
