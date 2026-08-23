@@ -1,5 +1,6 @@
 import "server-only";
 import { Resend } from "resend";
+import { ROLE_LABELS, roleHome, type Role } from "@/lib/constants";
 
 // This app had zero email-sending infrastructure until this shipped — same
 // documented gap as SMS (CLAUDE.md §28/§29) until that got a stub-only
@@ -34,6 +35,36 @@ export async function sendEmail(to: string, subject: string, html: string, text:
   } catch {
     return { ok: false, error: "Couldn't send the email — try again in a moment." };
   }
+}
+
+// Sent once, right after public self-signup (see signup/actions.ts's
+// after() call) — this app had no welcome email at all until this shipped,
+// unlike essentially every other SaaS product. Deliberately not sent for
+// Admin/AE-assisted account creation (a Budtender, a Broker, a
+// quick-signed-up Grower) — those flows already show/relay the login
+// details directly to whoever's creating the account, and that person
+// isn't necessarily the one checking the inbox on the new account's email
+// address, so a "welcome, here's your login" email there could actually
+// leak the fact an account exists to the wrong person before the real
+// owner ever sees it. Public self-signup is the one flow where the email
+// address on the account is guaranteed to belong to the person who just
+// typed it in themselves.
+export async function sendWelcomeEmail(to: string, fullName: string, role: Role): Promise<SendEmailResult> {
+  const label = ROLE_LABELS[role] ?? "user";
+  const portalUrl = `${process.env.NEXTAUTH_URL || "http://localhost:3000"}${roleHome(role)}`;
+  const firstName = fullName.trim().split(/\s+/)[0] || "there";
+  return sendEmail(
+    to,
+    "Welcome to Cannabliz",
+    `<p>Hi ${firstName},</p>
+     <p>Your Cannabliz account is set up as a <strong>${label}</strong>. You're ready to go — head to your
+     portal to get started: <a href="${portalUrl}">${portalUrl}</a></p>
+     <p>If you didn't create this account, you can ignore this email.</p>`,
+    `Hi ${firstName},\n\n` +
+      `Your Cannabliz account is set up as a ${label}. You're ready to go — head to your portal to get started:\n` +
+      `${portalUrl}\n\n` +
+      `If you didn't create this account, you can ignore this email.`
+  );
 }
 
 export async function sendPasswordResetEmail(to: string, resetUrl: string): Promise<SendEmailResult> {

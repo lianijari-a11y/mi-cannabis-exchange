@@ -8,6 +8,7 @@ import { prisma } from "@/lib/prisma";
 import { generateAnonHandle } from "@/lib/anon-handle";
 import { lookupLicense } from "@/lib/license-registry";
 import { geocodeAddress } from "@/lib/geocoding";
+import { sendWelcomeEmail } from "@/lib/email";
 import { ROLES, LICENSED_ROLES, ADDRESS_ROLES, roleHome, type Role } from "@/lib/constants";
 import { safeRedirect } from "@/lib/safe-redirect";
 
@@ -128,6 +129,15 @@ export async function signup(_prevState: SignupState, formData: FormData): Promi
       state,
       zip,
     },
+  });
+
+  // Off the signup critical path — a slow or failed send should never
+  // delay or block account creation. No-ops with an honest, silently
+  // swallowed failure when RESEND_API_KEY isn't set (isEmailConfigured's
+  // "not configured" fallback), same posture as every other optional
+  // integration in this app.
+  after(async () => {
+    await sendWelcomeEmail(email, fullName, role);
   });
 
   // Off the signup critical path, same posture as METRC submission in
