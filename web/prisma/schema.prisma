@@ -1454,6 +1454,14 @@ model Lead {
   calledCount Int       @default(0)
   lastCallAt  DateTime?
 
+  // Set only via a real click on the unsubscribe link every marketing
+  // email carries (lib/lead-email.ts's sendEmailToLead appends it
+  // automatically to every send) — CAN-SPAM requires honoring this
+  // specific opt-out, distinct from the DNC disposition (which is a
+  // phone/SMS-origin signal and is ALSO checked before sending email, as
+  // a courtesy, but isn't itself a CAN-SPAM unsubscribe).
+  emailUnsubscribedAt DateTime?
+
   deleted Boolean @default(false) // soft-delete, matches the source tool's "remove/restore" pattern
 
   createdAt DateTime @default(now())
@@ -1533,6 +1541,17 @@ model LeadMessageCampaign {
   createdByRole String // "sales_rep" | "admin"
   createdById   String
   createdBy     User    @relation("LeadCampaignCreatedBy", fields: [createdById], references: [id])
+
+  // "sms" | "email" — added when email outreach shipped alongside SMS.
+  // Determines which send path processDueCampaigns takes (sendSmsToLead
+  // vs. lib/lead-email.ts's sendEmailToLead) and whether `subject` below
+  // is used. Every pre-existing campaign is implicitly "sms" via the
+  // default, so this is additive — nothing about the SMS path changed.
+  channel String @default("sms")
+  // Only used when channel = "email" — a single subject line for the
+  // whole campaign (not AI-personalized per lead, unlike the body text;
+  // real email campaign tools generally use one subject across a send).
+  subject String?
 
   templateText String
   // False when the "not configured"/error fallback sent the same literal

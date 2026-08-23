@@ -3,7 +3,8 @@
 import { useMemo, useState, useTransition } from "react";
 import { unstable_rethrow } from "next/navigation";
 
-export type ComposerLead = { id: string; company: string; contact: string | null; phone: string | null };
+export type MessageChannel = "sms" | "email";
+export type ComposerLead = { id: string; company: string; contact: string | null; phone: string | null; email: string | null };
 
 type PreviewResult = {
   personalized: boolean;
@@ -12,6 +13,7 @@ type PreviewResult = {
   leadsById: Record<string, { id: string; company: string; contact: string | null }>;
   excludedDnc: number;
   excludedNotVisible: number;
+  excludedUnsubscribed: number;
 };
 
 type Props = {
@@ -20,14 +22,17 @@ type Props = {
   listLabels: Record<string, string>;
   leads: ComposerLead[];
   aiConfigured: boolean;
+  emailConfigured: boolean;
   maxLeads: number;
   basePath: string; // "/sales/marketing/campaigns" or "/admin/marketing/campaigns"
-  previewAction: (templateText: string, leadIds: string[]) => Promise<PreviewResult>;
+  previewAction: (templateText: string, leadIds: string[], channel: MessageChannel) => Promise<PreviewResult>;
   createAction: (
     templateText: string,
     items: { leadId: string; text: string }[],
     scheduledForIso: string | null,
-    personalized: boolean
+    personalized: boolean,
+    channel: MessageChannel,
+    subject?: string
   ) => Promise<void>;
 };
 
@@ -45,11 +50,14 @@ export function CampaignComposer({
   listLabels,
   leads,
   aiConfigured,
+  emailConfigured,
   maxLeads,
   basePath,
   previewAction,
   createAction,
 }: Props) {
+  const [channel, setChannel] = useState<MessageChannel>("sms");
+  const [subject, setSubject] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState("");
   const [template, setTemplate] = useState("");
@@ -69,7 +77,8 @@ export function CampaignComposer({
       (l) =>
         l.company.toLowerCase().includes(q) ||
         (l.contact ?? "").toLowerCase().includes(q) ||
-        (l.phone ?? "").toLowerCase().includes(q)
+        (l.phone ?? "").toLowerCase().includes(q) ||
+        (l.email ?? "").toLowerCase().includes(q)
     );
   }, [leads, search]);
 
@@ -98,8 +107,12 @@ export function CampaignComposer({
 
   function runPreview() {
     setError(null);
+    if (channel === "email" && !subject.trim()) {
+      setError("Write a subject line first.");
+      return;
+    }
     if (!template.trim()) {
-      setError("Write a message first.");
+      setError(channel === "email" ? "Write the email body first." : "Write a message first.");
       return;
     }
     if (selected.size === 0) {
@@ -112,7 +125,7 @@ export function CampaignComposer({
     }
     startTransition(async () => {
       try {
-        const result = await previewAction(template, [...selected]);
+        const result = await previewAction(template, [...selected], channel);
         setPreview(result);
         setDraftTexts(Object.fromEntries(result.drafts.map((d) => [d.leadId, d.text])));
         setRemoved(new Set());
@@ -138,7 +151,7 @@ export function CampaignComposer({
     const scheduledForIso = scheduleMode === "later" ? new Date(scheduledAt).toISOString() : null;
     startTransition(async () => {
       try {
-        await createAction(template, items, scheduledForIso, preview.personalized);
+        await createAction(template, items, scheduledForIso, preview.personalized, channel, channel === "email" ? subject : undefined);
       } catch (err) {
         unstable_rethrow(err);
         setError(err instanceof Error ? err.message : "Couldn't create the campaign — try again.");
@@ -164,10 +177,17 @@ export function CampaignComposer({
             {preview.note}
           </p>
         )}
-        {(preview.excludedDnc > 0 || preview.excludedNotVisible > 0) && (
+        {(preview.excludedDnc > 0 || preview.excludedNotVisible > 0 || preview.excludedUnsubscribed > 0) && (
           <p className="text-[11px] text-gray-500 dark:text-gray-400">
             {preview.excludedDnc > 0 && `${preview.excludedDnc} lead(s) skipped — marked Do Not Call. `}
+            {preview.excludedUnsubscribed > 0 && `${preview.excludedUnsubscribed} lead(s) skipped — unsubscribed from email. `}
             {preview.excludedNotVisible > 0 && `${preview.excludedNotVisible} lead(s) skipped — assigned to another Account Executive.`}
+          </p>
+        )}
+
+        {channel === "email" && (
+          <p className="text-xs text-gray-600 dark:text-gray-300">
+            Subject: <span className="font-medium text-gray-900 dark:text-gray-100">{subject}</span>
           </p>
         )}
 
@@ -199,7 +219,7 @@ export function CampaignComposer({
                   <textarea
                     value={draftTexts[d.leadId] ?? d.text}
                     onChange={(e) => setDraftTexts((prev) => ({ ...prev, [d.leadId]: e.target.value }))}
-                    rows={2}
+                    rows={channel === "email" ? 5 : 2}
                     className="w-full text-xs rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 p-2"
                   />
                 </div>
@@ -287,6 +307,32 @@ export function CampaignComposer({
 
   return (
     <div className="max-w-2xl space-y-4">
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={() => setChannel("sms")}
+          className={`text-xs rounded-lg px-3 py-1.5 border font-medium ${
+            channel === "sms"
+              ? "bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900 border-gray-900 dark:border-gray-100"
+              : "border-gray-300 dark:border-gray-700 text-gray-600 dark:text-gray-300"
+          }`}
+        >
+          Text
+        </button>
+        <button
+          type="button"
+          onClick={() => emailConfigured && setChannel("email")}
+          disabled={!emailConfigured}
+          className={`text-xs rounded-lg px-3 py-1.5 border font-medium disabled:opacity-40 ${
+            channel === "email"
+              ? "bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900 border-gray-900 dark:border-gray-100"
+              : "border-gray-300 dark:border-gray-700 text-gray-600 dark:text-gray-300"
+          }`}
+        >
+          Email {!emailConfigured && "(not set up)"}
+        </button>
+      </div>
+
       <div className="flex gap-2 flex-wrap">
         {listKeys.map((k) => (
           <a
@@ -306,19 +352,42 @@ export function CampaignComposer({
         A campaign targets leads from one list at a time — switching lists above clears your current selection.
       </p>
 
+      {channel === "email" && (
+        <div>
+          <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Subject</label>
+          <input
+            type="text"
+            value={subject}
+            onChange={(e) => setSubject(e.target.value)}
+            placeholder="e.g. Fresh flower in this week"
+            className="w-full text-xs rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 p-2"
+          />
+          <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-1">
+            One subject line for the whole send — not personalized per lead.
+          </p>
+        </div>
+      )}
+
       <div>
-        <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Message template</label>
+        <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+          {channel === "email" ? "Email body" : "Message template"}
+        </label>
         <textarea
           value={template}
           onChange={(e) => setTemplate(e.target.value)}
-          rows={3}
-          placeholder="e.g. Hey {name}, we've got fresh flower in this week at a great wholesale price — want me to send the menu?"
+          rows={channel === "email" ? 6 : 3}
+          placeholder={
+            channel === "email"
+              ? "e.g. Hey {name}, we've got fresh flower in this week at a great wholesale price — want me to send the menu?"
+              : "e.g. Hey {name}, we've got fresh flower in this week at a great wholesale price — want me to send the menu?"
+          }
           className="w-full text-xs rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 p-2"
         />
         <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-1">
           {aiConfigured
             ? "Claude will lightly personalize this for each selected lead using their name/company — you review and can edit every line before anything sends."
             : "AI personalization isn't configured on this deployment — the same message will go to everyone (still fully editable before sending)."}
+          {channel === "email" && " Every email also gets an unsubscribe link and mailing address appended automatically."}
         </p>
       </div>
 
@@ -345,7 +414,12 @@ export function CampaignComposer({
             <input type="checkbox" checked={selected.has(l.id)} onChange={() => toggleOne(l.id)} />
             <span className="text-gray-900 dark:text-gray-100">{l.company}</span>
             {l.contact && <span className="text-gray-500 dark:text-gray-400">— {l.contact}</span>}
-            {!l.phone && <span className="text-[10px] text-amber-600 dark:text-amber-400 ml-auto">no phone</span>}
+            {channel === "email" && !l.email && (
+              <span className="text-[10px] text-amber-600 dark:text-amber-400 ml-auto">no email</span>
+            )}
+            {channel === "sms" && !l.phone && (
+              <span className="text-[10px] text-amber-600 dark:text-amber-400 ml-auto">no phone</span>
+            )}
           </label>
         ))}
         {filtered.length === 0 && <p className="text-xs text-gray-500 p-3">No leads match.</p>}

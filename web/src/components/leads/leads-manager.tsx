@@ -134,6 +134,16 @@ export function LeadsManager({
       text: string,
       scheduledForIso: string
     ) => Promise<{ ok: true } | { ok: false; error: string }>;
+    // Email twins of sendTextAction/scheduleTextAction — same optional,
+    // gate-on-presence pattern, only wired in where lib/email.ts's Resend
+    // is actually configured.
+    sendEmailAction?: (id: string, subject: string, body: string) => Promise<{ ok: true } | { ok: false; error: string }>;
+    scheduleEmailAction?: (
+      id: string,
+      subject: string,
+      body: string,
+      scheduledForIso: string
+    ) => Promise<{ ok: true } | { ok: false; error: string }>;
     addPhoneNumberAction: (leadId: string, phone: string, name: string) => Promise<void>;
     updatePhoneNumberAction: (id: string, phone: string, name: string) => Promise<void>;
     removePhoneNumberAction: (id: string) => Promise<void>;
@@ -150,6 +160,11 @@ export function LeadsManager({
   const [scheduleDraftId, setScheduleDraftId] = useState<string | null>(null);
   const [scheduleError, setScheduleError] = useState<string | null>(null);
   const [scheduleSuccessId, setScheduleSuccessId] = useState<string | null>(null);
+  const [emailDraftId, setEmailDraftId] = useState<string | null>(null);
+  const [emailError, setEmailError] = useState<string | null>(null);
+  const [emailScheduleDraftId, setEmailScheduleDraftId] = useState<string | null>(null);
+  const [emailScheduleError, setEmailScheduleError] = useState<string | null>(null);
+  const [emailScheduleSuccessId, setEmailScheduleSuccessId] = useState<string | null>(null);
   const [numbersOpenId, setNumbersOpenId] = useState<string | null>(null);
   const [assignError, setAssignError] = useState<{ id: string; message: string } | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -502,6 +517,104 @@ export function LeadsManager({
                 <p className="text-[11px] text-green-700 dark:text-green-400 mt-1">Text scheduled.</p>
               )}
 
+              {emailDraftId === l.id && actions.sendEmailAction && (
+                <form
+                  action={async (fd) => {
+                    const subject = String(fd.get("subject") ?? "").trim();
+                    const body = String(fd.get("body") ?? "").trim();
+                    if (!subject || !body) return;
+                    setEmailError(null);
+                    const result = await withBusy(l.id, () => actions.sendEmailAction!(l.id, subject, body));
+                    if (result && !result.ok) {
+                      setEmailError(result.error);
+                      return;
+                    }
+                    setEmailDraftId(null);
+                  }}
+                  className="mt-2 flex flex-col gap-1.5 border border-gray-200 dark:border-gray-800 rounded-lg p-2"
+                >
+                  <input
+                    name="subject"
+                    autoFocus
+                    placeholder="Subject"
+                    className="border border-gray-300 dark:border-gray-700 rounded-lg px-2 py-1 text-xs bg-transparent"
+                  />
+                  <textarea
+                    name="body"
+                    rows={3}
+                    placeholder={`Email ${l.email ?? ""}…`}
+                    className="border border-gray-300 dark:border-gray-700 rounded-lg px-2 py-1 text-xs bg-transparent"
+                  />
+                  <div className="flex items-center gap-2">
+                    <button type="submit" className="text-xs text-green-700 dark:text-green-400 underline">
+                      Send
+                    </button>
+                    <button type="button" onClick={() => setEmailDraftId(null)} className="text-xs text-gray-400">
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              )}
+              {emailDraftId === l.id && emailError && (
+                <p className="text-[11px] text-red-600 mt-1">{emailError}</p>
+              )}
+
+              {emailScheduleDraftId === l.id && actions.scheduleEmailAction && (
+                <form
+                  action={async (fd) => {
+                    const subject = String(fd.get("subject") ?? "").trim();
+                    const body = String(fd.get("body") ?? "").trim();
+                    const when = String(fd.get("when") ?? "");
+                    if (!subject || !body || !when) return;
+                    setEmailScheduleError(null);
+                    const result = await withBusy(l.id, () =>
+                      actions.scheduleEmailAction!(l.id, subject, body, new Date(when).toISOString())
+                    );
+                    if (result && !result.ok) {
+                      setEmailScheduleError(result.error);
+                      return;
+                    }
+                    setEmailScheduleDraftId(null);
+                    setEmailScheduleSuccessId(l.id);
+                  }}
+                  className="mt-2 flex flex-col gap-1.5 border border-gray-200 dark:border-gray-800 rounded-lg p-2"
+                >
+                  <input
+                    name="subject"
+                    autoFocus
+                    placeholder="Subject"
+                    className="border border-gray-300 dark:border-gray-700 rounded-lg px-2 py-1 text-xs bg-transparent"
+                  />
+                  <textarea
+                    name="body"
+                    rows={3}
+                    placeholder={`Email ${l.email ?? ""} later…`}
+                    className="border border-gray-300 dark:border-gray-700 rounded-lg px-2 py-1 text-xs bg-transparent"
+                  />
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <input
+                      type="datetime-local"
+                      name="when"
+                      defaultValue={defaultScheduleTime()}
+                      min={nowForMin()}
+                      className="text-xs border border-gray-300 dark:border-gray-700 rounded-lg px-2 py-1 bg-transparent"
+                    />
+                    <button type="submit" className="text-xs text-green-700 dark:text-green-400 underline">
+                      Schedule
+                    </button>
+                    <button type="button" onClick={() => setEmailScheduleDraftId(null)} className="text-xs text-gray-400">
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              )}
+              {emailScheduleDraftId === l.id && emailScheduleError && (
+                <p className="text-[11px] text-red-600 mt-1">{emailScheduleError}</p>
+              )}
+              {emailScheduleSuccessId === l.id && (
+                <p className="text-[11px] text-green-700 dark:text-green-400 mt-1">Email scheduled.</p>
+              )}
+
               <button
                 type="button"
                 onClick={() => setNumbersOpenId(numbersOpenId === l.id ? null : l.id)}
@@ -566,6 +679,31 @@ export function LeadsManager({
                       className="text-[11px] border border-amber-300 dark:border-amber-800 text-amber-800 dark:text-amber-300 rounded-lg px-2.5 py-1"
                     >
                       Text back
+                    </button>
+                  )}
+                  {actions.sendEmailAction && l.email && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEmailError(null);
+                        setEmailDraftId(l.id);
+                      }}
+                      className="text-[11px] border border-blue-300 dark:border-blue-800 text-blue-700 dark:text-blue-300 rounded-lg px-2.5 py-1"
+                    >
+                      Email
+                    </button>
+                  )}
+                  {actions.scheduleEmailAction && l.email && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEmailScheduleError(null);
+                        setEmailScheduleSuccessId(null);
+                        setEmailScheduleDraftId(l.id);
+                      }}
+                      className="text-[11px] border border-blue-300 dark:border-blue-800 text-blue-700 dark:text-blue-300 rounded-lg px-2.5 py-1"
+                    >
+                      Email later
                     </button>
                   )}
                   <select

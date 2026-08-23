@@ -19,7 +19,10 @@ export function isEmailConfigured(): boolean {
 
 export type SendEmailResult = { ok: true } | { ok: false; error: string };
 
-async function sendEmail(to: string, subject: string, html: string, text: string): Promise<SendEmailResult> {
+// Exported so lib/lead-email.ts (real marketing email to leads, added
+// alongside the SMS outreach tools) can send through the same Resend
+// client/config rather than standing up a second one.
+export async function sendEmail(to: string, subject: string, html: string, text: string): Promise<SendEmailResult> {
   if (!RESEND_API_KEY) {
     return { ok: false, error: "Email isn't configured yet — ask an Admin to reset your password instead." };
   }

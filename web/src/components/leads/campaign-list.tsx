@@ -6,6 +6,8 @@ import { useRouter } from "next/navigation";
 type CampaignItem = { id: string; status: string; lead: { company: string } };
 export type CampaignRecord = {
   id: string;
+  channel: string;
+  subject: string | null;
   templateText: string;
   personalized: boolean;
   scheduledFor: Date | string | null;
@@ -29,6 +31,7 @@ const ITEM_STATUS_LABEL: Record<string, string> = {
   failed: "failed",
   skipped_dnc: "skipped — DNC",
   skipped_blocked: "skipped — blocked",
+  skipped_unsubscribed: "skipped — unsubscribed",
   skipped_claimed: "skipped — reassigned",
   canceled: "canceled",
 };
@@ -67,6 +70,15 @@ export function CampaignList({
                 <span className="text-xs font-medium text-gray-900 dark:text-gray-100">
                   {STATUS_LABEL[c.status] ?? c.status}
                 </span>
+                <span
+                  className={`text-[10px] rounded-full px-1.5 py-0.5 ml-2 ${
+                    c.channel === "email"
+                      ? "bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"
+                      : "bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-300"
+                  }`}
+                >
+                  {c.channel === "email" ? "Email" : "Text"}
+                </span>
                 <span className="text-[11px] text-gray-500 dark:text-gray-400 ml-2">
                   {c.items.length} message{c.items.length === 1 ? "" : "s"}
                   {!c.personalized && " · plain template"}
@@ -89,6 +101,7 @@ export function CampaignList({
                 </button>
               )}
             </div>
+            {c.subject && <p className="text-xs font-medium text-gray-900 dark:text-gray-100">{c.subject}</p>}
             <p className="text-xs text-gray-700 dark:text-gray-300 line-clamp-2">{c.templateText}</p>
             <p className="text-[11px] text-gray-500 dark:text-gray-400">
               {c.scheduledFor ? `Scheduled for ${fmt(c.scheduledFor)}` : "Sent as soon as possible"}

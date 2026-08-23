@@ -2,6 +2,9 @@ import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import { prisma } from "@/lib/prisma";
 import { sendSmsToLead } from "@/lib/vonage-sms";
+import { sendEmailToLead } from "@/lib/lead-email";
+
+export type MessageChannel = "sms" | "email";
 
 // "AI text message creator" — an AE/Admin writes one generic template,
 // optionally has Claude draft a personalized version per selected lead,
@@ -49,24 +52,39 @@ export type SelectableLead = { id: string; company: string; contact: string | nu
 // Leads an actor can actually target — same visibility rule as
 // leadsForList (unclaimed + this AE's own claimed leads; Admin
 // unrestricted), plus DNC leads dropped outright since sending to one
-// would just be rejected at send time anyway. Returns how many were
-// dropped for that reason so the compose UI can say so honestly instead
-// of silently shrinking the list.
+// would just be rejected at send time anyway. For channel "email", leads
+// that already unsubscribed are dropped the same way — CAN-SPAM's own
+// opt-out, distinct from DNC. Returns how many were dropped for each
+// reason so the compose UI can say so honestly instead of silently
+// shrinking the list.
 export async function resolveSelectableLeads(
   leadIds: string[],
-  actor: { role: "sales_rep" | "admin"; id: string }
-): Promise<{ leads: SelectableLead[]; excludedDnc: number; excludedNotVisible: number }> {
-  if (leadIds.length === 0) return { leads: [], excludedDnc: 0, excludedNotVisible: 0 };
+  actor: { role: "sales_rep" | "admin"; id: string },
+  channel: MessageChannel = "sms"
+): Promise<{ leads: SelectableLead[]; excludedDnc: number; excludedNotVisible: number; excludedUnsubscribed: number }> {
+  if (leadIds.length === 0) return { leads: [], excludedDnc: 0, excludedNotVisible: 0, excludedUnsubscribed: 0 };
   const rows = await prisma.lead.findMany({
     where: { id: { in: leadIds }, deleted: false },
-    select: { id: true, company: true, contact: true, disposition: true, assignedSalesRepId: true },
+    select: {
+      id: true,
+      company: true,
+      contact: true,
+      disposition: true,
+      assignedSalesRepId: true,
+      emailUnsubscribedAt: true,
+    },
   });
   let excludedDnc = 0;
   let excludedNotVisible = 0;
+  let excludedUnsubscribed = 0;
   const leads: SelectableLead[] = [];
   for (const r of rows) {
     if (r.disposition === "DNC") {
       excludedDnc++;
+      continue;
+    }
+    if (channel === "email" && r.emailUnsubscribedAt) {
+      excludedUnsubscribed++;
       continue;
     }
     if (actor.role === "sales_rep" && r.assignedSalesRepId && r.assignedSalesRepId !== actor.id) {
@@ -75,15 +93,19 @@ export async function resolveSelectableLeads(
     }
     leads.push({ id: r.id, company: r.company, contact: r.contact });
   }
-  return { leads, excludedDnc, excludedNotVisible };
+  return { leads, excludedDnc, excludedNotVisible, excludedUnsubscribed };
 }
 
 export type PersonalizedDraft = { leadId: string; text: string };
 
-function systemPrompt() {
-  return `You personalize a generic outreach text message for a list of cannabis-industry business leads. You'll get a template message and a JSON array of leads, each with an "id", "company" name, and optionally a "contact" first/full name.
+function systemPrompt(channel: MessageChannel) {
+  const mediumLine =
+    channel === "email"
+      ? "Keep it as a real plain-text email body — no markdown, no emoji unless the template already has one."
+      : "Keep it as a real SMS text — no markdown, no emoji unless the template already has one.";
+  return `You personalize a generic outreach ${channel === "email" ? "email" : "text"} message for a list of cannabis-industry business leads. You'll get a template message and a JSON array of leads, each with an "id", "company" name, and optionally a "contact" first/full name.
 
-For each lead, lightly personalize the template — use their contact's first name if given (otherwise just address the company), reference the company name naturally if it fits. Do NOT invent any fact, detail, offer, price, or claim that isn't already in the template. Keep the core offer/call-to-action and roughly the same length as the template. Keep it as a real SMS text — no markdown, no emoji unless the template already has one.
+For each lead, lightly personalize the template — use their contact's first name if given (otherwise just address the company), reference the company name naturally if it fits. Do NOT invent any fact, detail, offer, price, or claim that isn't already in the template. Keep the core offer/call-to-action and roughly the same length as the template. ${mediumLine}
 
 Output ONLY a JSON array, no prose, no markdown fences, one object per lead in this exact shape:
 [{"leadId": "<id>", "text": "<personalized message>"}]
@@ -110,7 +132,8 @@ function extractJsonArray(text: string): unknown[] | null {
 // fallback line just reads identically to the template).
 export async function personalizeMessagesForLeads(
   templateText: string,
-  leads: SelectableLead[]
+  leads: SelectableLead[],
+  channel: MessageChannel = "sms"
 ): Promise<{ personalized: boolean; drafts: PersonalizedDraft[]; note?: string }> {
   const trimmed = templateText.trim();
   if (!trimmed || leads.length === 0) {
@@ -136,7 +159,7 @@ export async function personalizeMessagesForLeads(
       const response = await client.messages.create({
         model: MODEL,
         max_tokens: 4096,
-        system: systemPrompt(),
+        system: systemPrompt(channel),
         output_config: { effort: "low" },
         messages: [
           {
@@ -194,16 +217,24 @@ export type CreateCampaignInput = {
   scheduledFor: Date | null;
   personalized: boolean;
   actor: { role: "sales_rep" | "admin"; id: string };
+  channel?: MessageChannel; // defaults to "sms" — matches the schema default, additive
+  subject?: string; // required in practice for channel "email", ignored for "sms"
 };
 
 export async function createCampaign(input: CreateCampaignInput) {
   const items = input.items.filter((i) => i.text.trim());
   if (items.length === 0) throw new Error("No messages to send — add at least one lead.");
+  const channel = input.channel ?? "sms";
+  if (channel === "email" && !input.subject?.trim()) {
+    throw new Error("Subject can't be empty.");
+  }
 
   const campaign = await prisma.leadMessageCampaign.create({
     data: {
       createdByRole: input.actor.role,
       createdById: input.actor.id,
+      channel,
+      subject: channel === "email" ? input.subject!.trim() : null,
       templateText: input.templateText,
       personalized: input.personalized,
       scheduledFor: input.scheduledFor,
@@ -231,6 +262,27 @@ export async function scheduleTextForLead(
   return createCampaign({
     templateText: text,
     items: [{ leadId, text: text.trim() }],
+    scheduledFor,
+    personalized: false,
+    actor,
+  });
+}
+
+// Email twin of scheduleTextForLead — same single-lead-campaign reuse.
+export async function scheduleEmailForLead(
+  leadId: string,
+  subject: string,
+  body: string,
+  scheduledFor: Date,
+  actor: { role: "sales_rep" | "admin"; id: string }
+) {
+  if (!subject.trim()) throw new Error("Subject can't be empty.");
+  if (!body.trim()) throw new Error("Message can't be empty.");
+  return createCampaign({
+    templateText: body,
+    subject,
+    channel: "email",
+    items: [{ leadId, text: body.trim() }],
     scheduledFor,
     personalized: false,
     actor,
@@ -274,6 +326,7 @@ export async function campaignsForActor(actor: { role: "sales_rep" | "admin"; id
 function classifyFailure(error: string): string {
   if (error.includes("Do Not Call")) return "skipped_dnc";
   if (error.includes("marked bad")) return "skipped_blocked";
+  if (error.includes("unsubscribed")) return "skipped_unsubscribed";
   if (error.includes("already being worked by another")) return "skipped_claimed";
   return "failed";
 }
@@ -311,10 +364,11 @@ export async function processDueCampaigns(limit = MAX_MESSAGES_PER_RUN): Promise
     });
 
     for (const item of pendingItems) {
-      const result = await sendSmsToLead(item.leadId, item.text, campaign.createdById, {
-        role: campaign.createdByRole as "sales_rep" | "admin",
-        id: campaign.createdById,
-      });
+      const actorArg = { role: campaign.createdByRole as "sales_rep" | "admin", id: campaign.createdById };
+      const result =
+        campaign.channel === "email"
+          ? await sendEmailToLead(item.leadId, campaign.subject ?? "", item.text, campaign.createdById, actorArg)
+          : await sendSmsToLead(item.leadId, item.text, campaign.createdById, actorArg);
       if (result.ok) {
         await prisma.leadMessageCampaignItem.update({
           where: { id: item.id },

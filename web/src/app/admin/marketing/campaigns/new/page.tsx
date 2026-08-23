@@ -2,6 +2,7 @@ import { requireRole } from "@/lib/dal";
 import { PortalShell } from "@/components/portal-shell";
 import { leadsForList, LEAD_LIST_KEYS, LEAD_LIST_LABELS, type LeadListKey } from "@/lib/leads";
 import { isMessagingAiConfigured, MAX_CAMPAIGN_LEADS } from "@/lib/lead-messaging";
+import { isEmailConfigured } from "@/lib/email";
 import { CampaignComposer } from "@/components/leads/campaign-composer";
 import { previewCampaignAction, createCampaignAction } from "../actions";
 
@@ -49,8 +50,9 @@ export default async function AdminNewCampaignPage({
         listKey={listKey}
         listKeys={LEAD_LIST_KEYS}
         listLabels={LEAD_LIST_LABELS}
-        leads={leads.map((l) => ({ id: l.id, company: l.company, contact: l.contact, phone: l.phone }))}
+        leads={leads.map((l) => ({ id: l.id, company: l.company, contact: l.contact, phone: l.phone, email: l.email }))}
         aiConfigured={isMessagingAiConfigured()}
+        emailConfigured={isEmailConfigured()}
         maxLeads={MAX_CAMPAIGN_LEADS}
         basePath="/admin/marketing/campaigns"
         previewAction={previewCampaignAction}

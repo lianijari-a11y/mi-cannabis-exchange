@@ -19,7 +19,8 @@ import {
 } from "@/lib/leads";
 import { lookupLeadContactInfo, applyLeadContactInfo } from "@/lib/lead-contact-lookup";
 import { sendSmsToLead } from "@/lib/vonage-sms";
-import { scheduleTextForLead } from "@/lib/lead-messaging";
+import { scheduleTextForLead, scheduleEmailForLead } from "@/lib/lead-messaging";
+import { sendEmailToLead } from "@/lib/lead-email";
 
 const PATH = "/sales/marketing";
 
@@ -119,6 +120,25 @@ export async function scheduleTextAction(id: string, text: string, scheduledForI
   const session = await requireRole("sales_rep");
   try {
     await scheduleTextForLead(id, text, new Date(scheduledForIso), { role: "sales_rep", id: session.user.id });
+  } catch (err) {
+    return { ok: false as const, error: err instanceof Error ? err.message : "Something went wrong." };
+  }
+  revalidatePath(PATH);
+  revalidatePath(`${PATH}/campaigns`);
+  return { ok: true as const };
+}
+
+export async function sendEmailAction(id: string, subject: string, body: string) {
+  const session = await requireRole("sales_rep");
+  const result = await sendEmailToLead(id, subject, body, session.user.id, { role: "sales_rep", id: session.user.id });
+  revalidatePath(PATH);
+  return result;
+}
+
+export async function scheduleEmailAction(id: string, subject: string, body: string, scheduledForIso: string) {
+  const session = await requireRole("sales_rep");
+  try {
+    await scheduleEmailForLead(id, subject, body, new Date(scheduledForIso), { role: "sales_rep", id: session.user.id });
   } catch (err) {
     return { ok: false as const, error: err instanceof Error ? err.message : "Something went wrong." };
   }
