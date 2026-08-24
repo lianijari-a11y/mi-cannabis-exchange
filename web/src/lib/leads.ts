@@ -53,7 +53,7 @@ function normalizeName(s: string | null | undefined): string {
 // outcomes), applied to Lead instead of User. Admin is always exempt,
 // same as everywhere else Admin has unrestricted reach. Called from every
 // "real contact" action below (logLeadCall, setLeadDisposition, and
-// sendSmsToLead in lib/vonage-sms.ts) — never from a read path, since
+// sendSmsToLead in lib/voipms-sms.ts) — never from a read path, since
 // browsing/searching the list isn't "contact."
 export async function claimOrVerifyLeadAssignment(
   leadId: string,
@@ -229,7 +229,7 @@ const MAX_PHONE_NUMBERS = 5;
 
 // Keeps the legacy single Lead.phone field pointed at whatever's
 // currently at sortOrder 0 — every existing phone-dependent path (search,
-// the tel: click-to-call link, Vonage texting in lib/vonage-sms.ts) reads
+// the tel: click-to-call link, VoIP.ms texting in lib/voipms-sms.ts) reads
 // that one field and was never rewritten to look at the new list, so
 // syncing it here is what makes "set as main" actually take effect
 // everywhere else without touching any of those call sites.

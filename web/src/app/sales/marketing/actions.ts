@@ -18,7 +18,7 @@ import {
   type LeadDisposition,
 } from "@/lib/leads";
 import { lookupLeadContactInfo, applyLeadContactInfo } from "@/lib/lead-contact-lookup";
-import { sendSmsToLead } from "@/lib/vonage-sms";
+import { sendSmsToLead } from "@/lib/voipms-sms";
 import { scheduleTextForLead, scheduleEmailForLead } from "@/lib/lead-messaging";
 import { sendEmailToLead } from "@/lib/lead-email";
 

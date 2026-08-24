@@ -120,7 +120,7 @@ export function LeadsManager({
       id: string
     ) => Promise<{ ok: true; phone: string | null; email: string | null; source: string | null } | { ok: false; error: string }>;
     applyContactInfoAction?: (id: string, phone: string | null, email: string | null) => Promise<{ ok: boolean; error?: string }>;
-    // Optional — only wired in where lib/vonage-sms.ts is actually
+    // Optional — only wired in where lib/voipms-sms.ts is actually
     // configured; pages that don't pass it just don't show the Text
     // button, same "optional prop, gate on presence" pattern as the two
     // contact-lookup actions above.
@@ -128,7 +128,7 @@ export function LeadsManager({
     // "Text back" — schedules a text for a future date/time instead of
     // sending immediately, right from the same row as the disposition
     // controls. Same optional-prop gating as sendTextAction, since it
-    // routes through the same Vonage-backed send at delivery time.
+    // routes through the same VoIP.ms-backed send at delivery time.
     scheduleTextAction?: (
       id: string,
       text: string,

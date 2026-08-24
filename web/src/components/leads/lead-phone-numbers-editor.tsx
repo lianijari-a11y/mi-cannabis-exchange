@@ -8,7 +8,7 @@ import type { LeadPhoneNumberRecord } from "./leads-manager";
 // sortOrder 0 is "main," sortOrder 1 is "2nd choice"; clicking those
 // buttons reorders rather than toggling a separate flag per slot. A
 // blocked number (an inbound "wrong number" reply, see
-// lib/vonage-inbound.ts) shows a clear reason and can't be re-added under
+// lib/voipms-inbound.ts) shows a clear reason and can't be re-added under
 // the same value without a rep consciously overriding it.
 export function LeadPhoneNumbersEditor({
   leadId,

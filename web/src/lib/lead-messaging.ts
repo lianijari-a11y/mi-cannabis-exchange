@@ -1,7 +1,7 @@
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import { prisma } from "@/lib/prisma";
-import { sendSmsToLead } from "@/lib/vonage-sms";
+import { sendSmsToLead } from "@/lib/voipms-sms";
 import { sendEmailToLead } from "@/lib/lead-email";
 
 export type MessageChannel = "sms" | "email";
@@ -28,7 +28,7 @@ export type MessageChannel = "sms" | "email";
 
 const MODEL = "claude-opus-5";
 const CHUNK_SIZE = 15; // leads per Claude call, bounds output tokens per request
-const SEND_STAGGER_MS = 150; // small delay between sends so a big batch doesn't hammer Vonage
+const SEND_STAGGER_MS = 150; // small delay between sends so a big batch doesn't hammer VoIP.ms
 const MAX_MESSAGES_PER_RUN = 40; // per processDueCampaigns invocation — keeps one cron tick well inside a function's time budget
 
 // A personalization preview runs synchronously in a Server Action (unlike

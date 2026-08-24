@@ -4,8 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { sendEmail, isEmailConfigured } from "@/lib/email";
 import { addLeadNote, claimOrVerifyLeadAssignment } from "@/lib/leads";
 
-// Real marketing email to leads, alongside the existing real Vonage SMS
-// (lib/vonage-sms.ts, CLAUDE.md §57). Reuses the same Resend account
+// Real marketing email to leads, alongside the existing real VoIP.ms SMS
+// (lib/voipms-sms.ts, CLAUDE.md §57). Reuses the same Resend account
 // already wired up for password-reset email (lib/email.ts) — same
 // "not configured" honest-fallback convention.
 //
@@ -67,7 +67,7 @@ function wrapWithFooter(bodyHtml: string, bodyText: string, leadId: string) {
 
 export type SendLeadEmailResult = { ok: true } | { ok: false; error: string };
 
-// Mirrors lib/vonage-sms.ts's sendSmsToLead as closely as possible —
+// Mirrors lib/voipms-sms.ts's sendSmsToLead as closely as possible —
 // same claim-on-first-contact ownership check, same suppression checks
 // (DNC as a courtesy carryover from phone/SMS opt-out, plus the
 // email-specific unsubscribe), same activity-log entry — just a

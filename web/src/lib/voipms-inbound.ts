@@ -2,8 +2,8 @@ import "server-only";
 import { prisma } from "@/lib/prisma";
 import { addLeadNote } from "@/lib/leads";
 
-// Handles an inbound SMS reply from Vonage — the other half of
-// lib/vonage-sms.ts's outbound send. "Wrong number" blocks that specific
+// Handles an inbound SMS reply from VoIP.ms — the other half of
+// lib/voipms-sms.ts's outbound send. "Wrong number" blocks that specific
 // phone number; "stop"/"do not call"/"unsubscribe" blocks the number AND
 // flips the whole Lead to the DNC disposition (the real, platform-wide
 // suppression signal — checked by sendSmsToLead before anything goes out
@@ -11,14 +11,14 @@ import { addLeadNote } from "@/lib/leads";
 // texting a lead now has a real path for them to opt out, not just a
 // send-and-forget.
 //
-// Known, stated gap: Vonage's basic inbound webhook isn't signed by
-// default (unlike Twilio's, which this app never wired up either) — this
-// endpoint has no session and can't verify a POST genuinely came from
-// Vonage. Worst case if someone found the URL and spoofed a payload: a
-// real lead's number gets incorrectly blocked (a nuisance, reversible by
-// unblocking it by hand) — not a data leak, since this endpoint only ever
-// writes a block flag, never reads or returns lead data. Flagged here
-// rather than silently assumed safe.
+// Known, stated gap: VoIP.ms's GET URL Callback isn't signed or otherwise
+// verifiable — this endpoint has no session and can't confirm a request
+// genuinely came from VoIP.ms. Worst case if someone found the URL and
+// spoofed a request: a real lead's number gets incorrectly blocked (a
+// nuisance, reversible by unblocking it by hand) — not a data leak, since
+// this endpoint only ever writes a block flag, never reads or returns
+// lead data. Flagged here rather than silently assumed safe — same
+// posture the earlier Vonage integration documented for its own webhook.
 function digitsOnly(s: string): string {
   return (s || "").replace(/\D/g, "");
 }
